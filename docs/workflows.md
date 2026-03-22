@@ -187,6 +187,100 @@ steps:
 
 ---
 
+## 10.1 Workflow context (orchestrator runtime map)
+
+During a run, the orchestrator keeps a **string map** `context` (independent of `outputs` / `previous`). In YAML you can name the storage key **`context_key`** or **`variable`** (same thing). In refs, use **`context:<key>`** or **`var:<key>`** interchangeably.
+
+### `type: context_set`
+
+```yaml
+- id: <string>
+  type: context_set
+  context_key: <string>     # or: variable: <string>
+  value: "<literal>"        # exactly one of value, value_from
+  value_from: <ref>         # same refs as §11, plus context: / var:
+```
+
+- Does **not** change `previous` (pass-through); the step’s `outputs[id]` equals `previous` before the step.
+
+### `type: context_extract_json`
+
+```yaml
+- id: <string>
+  type: context_extract_json
+  context_key: <string>     # or variable:
+  input_from: <ref>         # JSON text
+  json_path: /path/0/key     # JSON Pointer (RFC 6901), leading /
+```
+
+- Parses JSON, reads one value at `json_path`, stringifies (objects/arrays → JSON text), stores under the key, and sets **`previous`** to that string.
+
+### `type: context_extract_xml`
+
+```yaml
+- id: <string>
+  type: context_extract_xml
+  context_key: <string>      # or variable:
+  input_from: <ref>          # XML text
+  xpath: /root/item/@id      # first node’s string value
+```
+
+- Uses **lxml** XPath; first match only. Namespaces: prefer XPath functions such as `local-name()` if needed.
+
+### `type: json_set`
+
+Write a value **into** a JSON document at a **JSON Pointer** path (parent path must already exist). The new value is taken from **`value_from`** (e.g. `var:myLabel` or a literal step). Strings that parse as JSON (objects, arrays, numbers, booleans) are stored as structured JSON; otherwise the raw string is used.
+
+```yaml
+- id: <string>
+  type: json_set
+  input_from: <ref>          # JSON document
+  json_path: /a/x            # pointer to the key/index to set
+  value_from: <ref>
+  mirror_to_context: <key>   # optional: also store full JSON string in context (alias: also_variable)
+```
+
+- Sets **`previous`** to the updated JSON text.
+
+### `type: xml_set_text`
+
+Write into the **first** XPath match: either element **text** or an **attribute** (if `attribute` is set).
+
+```yaml
+- id: <string>
+  type: xml_set_text
+  input_from: <ref>
+  xpath: /root/item
+  value_from: <ref>
+  attribute: id              # optional
+  mirror_to_context: <key>    # optional (alias: also_variable)
+```
+
+`run_workflow` returns the final **`context`** map to the orchestrator (not exposed in the default HTTP response body; it appears in logs/trace).
+
+---
+
+## 10.2 Conditional steps: `when` (IF / CASE-style)
+
+**There are no separate `if` / `case` step types.** Any step may include an optional **`when`** block. If present, the orchestrator evaluates it against **`context`** before running the step. If the condition is **false**, the step is **skipped**: `outputs[id] = previous` (unchanged pipeline), and trace records `skipped: true`, `reason: when`.
+
+```yaml
+- id: <string>
+  type: liquid               # or any other step type
+  when:
+    context_key: <string>    # or variable: — read context[context_key]
+    equals: "<string>"       # exactly one of: equals, not_equals, one_of
+  # not_equals: "<string>"
+  # one_of: ["a", "b"]       # CASE-style: value must be one of these
+  template: ...
+```
+
+- **`equals`** — IF context value equals this string (typical **IF**).
+- **`not_equals`** — run if different.
+- **`one_of`** — run if context value is in the list (**CASE** arm: use one step per branch with mutually exclusive conditions).
+
+---
+
 ## 11. References: `input_from` and `body_from`
 
 `<ref>` is one of:
@@ -196,6 +290,8 @@ steps:
 | `initial` | The **source document** passed to the run (`xml` in the API). |
 | `previous` | Output of the **immediately preceding** step (text). |
 | `<step_id>` | Stored output of the step with that `id` (must be an **earlier** step). |
+| `context:<key>` | The string stored in the workflow **context** under `key` (after a `context_set` / `context_extract_*` step). |
+| `var:<key>` | Same as `context:<key>`. |
 
 **Default** when `input_from` is omitted on an **xslt** step:
 
@@ -225,6 +321,19 @@ flowchart TD
 ```
 
 Each step stores a **string** (XML or other text). Only that string is passed via `input_from` / `body_from`.
+
+---
+
+## 12.1 Loops, branching, and “for each item”
+
+The step list stays a **flat list** (no nested YAML blocks). Each step still has one string in `outputs[id]`; **`when`** (§10.2) adds **optional skipping** — not nested subgraphs.
+
+| Need | Approach |
+|------|----------|
+| IF / CASE on values derived from XML or JSON | **`context_extract_*`** + **`when`** (`equals` / `one_of` / `not_equals`) on subsequent steps. |
+| Transform a list inside one payload, one aggregated result | **XSLT 1.0** or **Liquid** inside one step’s string. |
+| Many external calls (per item) | One **`http`** batch endpoint, or **multiple workflow invocations** from outside. |
+| Nested loops over *steps* | Still not modeled; use XSLT/Liquid, a batch HTTP service, or repeated runs. |
 
 ---
 

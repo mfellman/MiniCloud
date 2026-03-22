@@ -25,7 +25,7 @@ async def test_run_minimal_workflow_xslt_only():
         transport=transport,
         base_url="http://transformers.test",
     ) as client:
-        final_xml, _outputs, trace = await wr.run_workflow(
+        final_xml, _outputs, trace, _ctx = await wr.run_workflow(
             doc,
             '<?xml version="1.0"?><doc><item/></doc>',
             transformers_base_url="http://transformers.test",

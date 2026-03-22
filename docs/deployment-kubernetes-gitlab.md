@@ -143,7 +143,7 @@ Review and override via Kustomize `configMapGenerator` / `patches` or separate S
 
 | Area | Examples |
 |------|----------|
-| Gateway | `ORCHESTRATOR_URL`, `TRANSFORMERS_URL` — use in-cluster URLs (`http://orchestrator:8080`). |
+| Gateway | `ORCHESTRATOR_URL`, optional `GATEWAY_ORCHESTRATION_ONLY` (default manifests: `true`; only `/v1/run*` public). No `TRANSFORMERS_URL` on gateway when orchestration-only. |
 | Orchestrator | `TRANSFORMERS_URL`, `EGRESS_HTTP_URL`, `EGRESS_FTP_URL`, `EGRESS_SSH_URL`, `WORKFLOWS_DIR` (default `/app/workflows` when using ConfigMap mount). |
 | Scheduled jobs | `SCHEDULE_INVOCATION_TOKEN` from a **Secret** (see comments in `orchestrator-deployment.yaml`). |
 | Egress hardening | `HTTP_EGRESS_ALLOWED_HOSTS`, `FTP_EGRESS_ALLOWED_HOSTS`, `SSH_EGRESS_ALLOWED_HOSTS`. |

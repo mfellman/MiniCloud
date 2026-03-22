@@ -125,7 +125,7 @@ async def _execute(
     egress_sftp_url = f"{EGRESS_SSH_BASE}/sftp"
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            final_body, _outputs, trace = await run_workflow(
+            final_body, _outputs, trace, _ctx = await run_workflow(
                 doc,
                 xml,
                 transformers_base_url=TRANSFORMERS_BASE_URL,

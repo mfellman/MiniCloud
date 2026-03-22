@@ -70,6 +70,19 @@ def test_v1_status_aggregate(gateway_app, monkeypatch):
     assert mock_client.get.call_count == 2
 
 
+def test_orchestration_only_hides_transform_and_status(gateway_app, monkeypatch):
+    import app.main as gw
+
+    monkeypatch.setattr(gw, "GATEWAY_ORCHESTRATION_ONLY", True)
+    c = TestClient(gateway_app)
+    r = c.post(
+        "/v1/transform",
+        json={"xml": "<a/>", "xslt": "<xsl:stylesheet version='1.0' xmlns:xsl='http://www.w3.org/1999/XSL/Transform'/>"},
+    )
+    assert r.status_code == 404
+    assert c.get("/v1/status").status_code == 404
+
+
 def test_v1_run_without_orchestrator_returns_503(gateway_app, monkeypatch):
     import app.main as gw
 

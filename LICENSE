@@ -1,0 +1,45 @@
+MiniCloud Notification and Share-Back License
+
+Copyright (c) 2026 COPYRIGHT HOLDER — replace with your name and update the
+contact line at the end of this file.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+1. Notice — You must inform the copyright holder (using the contact below)
+   when you (a) deploy or operate the Software in a production or
+   business context, or (b) redistribute the Software or a modified version
+   (including source or binary distribution, or making it available as a
+   service built on this codebase). A short message describing the use or
+   distribution is enough. Purely private, non-production experimentation
+   without redistribution does not require notice.
+
+2. Share-back — If you modify the Software in a way that could reasonably
+   help others, you are expected to offer those changes back to the copyright
+   holder or via the project’s public contribution channel (for example a
+   merge or pull request), unless you cannot do so for a serious reason
+   (such as a legal obligation or confidential third-party material that
+   cannot be separated from your changes).
+
+The above conditions are in addition to, not instead of, the disclaimer below.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Contact for notices (replace with your email, issue tracker, or both):
+
+  Name:    <your name>
+  Email:   <your-email@example.com>
+  Project: https://gitlab.com/minicloud-group/MiniCloud-project
+           (or adjust to your canonical repository URL)

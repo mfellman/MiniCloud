@@ -211,6 +211,10 @@ Conversion uses **xmltodict**; output is a **JSON string** (suitable input for a
 
 Top-level JSON keys become Liquid variables (nested objects: `{{ user.name }}`). Uses **python-liquid** (Shopify-like syntax).
 
+### Context and conditional steps (`when`)
+
+The orchestrator keeps a **runtime context** map (string keys/values). Use **`context_key`** or **`variable`** in YAML for the same thing; refs **`context:<key>`** or **`var:<key>`**. Steps **`context_set`**, **`context_extract_*`**, **`json_set`** (write into JSON), and **`xml_set_text`** (write into XML) update data; optional **`mirror_to_context`** / **`also_variable`** stores the full document string after a write. Details: [Workflow YAML – §10.1–10.2](docs/workflows.md#101-workflow-context-orchestrator-runtime-map).
+
 ### Example files in this repository
 
 - `services/orchestrator/workflows/demo.yaml` — XSLT then HTTP POST (external URL).
@@ -258,8 +262,8 @@ Base URL with Compose: `http://localhost:8080`
 |--------|------|------|-------------|
 | GET | `/healthz` | — | Liveness. |
 | GET | `/readyz` | — | Readiness. |
-| GET | `/v1/status` | — | Aggregated readiness of configured backends (`GET …/readyz`); JSON includes `overall_ok`, per-service entries, and a **`tests`** block (metadata and optional GitLab links — **pytest is not run** by this endpoint; run tests in CI or locally). |
-| POST | `/v1/transform` | `{"xml":"...","xslt":"..."}` | Direct XSLT; no workflow. |
+| GET | `/v1/status` | — | Aggregated readiness of configured backends (`GET …/readyz`); JSON includes `overall_ok`, per-service entries, and a **`tests`** block (metadata and optional GitLab links — **pytest is not run** by this endpoint; run tests in CI or locally). **Disabled (404)** when `GATEWAY_ORCHESTRATION_ONLY` is set (default in Kubernetes manifests). |
+| POST | `/v1/transform` | `{"xml":"...","xslt":"..."}` | Direct XSLT; no workflow. **Disabled (404)** when `GATEWAY_ORCHESTRATION_ONLY` is set (use workflows only from the public internet). |
 | POST | `/v1/run/{workflow_name}` | `{"xml":"..."}` | **Preferred HTTP entry**: workflow chosen in the URL. |
 | POST | `/v1/run` | `{"workflow":"...","xml":"..."}` | Legacy: workflow name in JSON. |
 
@@ -310,6 +314,7 @@ Response is JSON with `status_code`, `headers`, `body` (text).
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
+| `GATEWAY_ORCHESTRATION_ONLY` | *(empty)* | If `true` / `1` / `yes`: **`POST /v1/transform`** and **`GET /v1/status`** return **404**; only **`POST /v1/run*`** (orchestration) is exposed. Kubernetes manifests set this for a minimal public surface. |
 | `TRANSFORMERS_URL` | `http://localhost:8081` | Transformers service base URL (e.g. `/applyXSLT`). |
 | `TRANSFORMERS_APPLY_PATH` | `/applyXSLT` | Path for direct XSLT via gateway (`POST /v1/transform`). |
 | `TRANSFORMERS_TIMEOUT_SECONDS` | `60` | Timeout for `/v1/transform`. |
@@ -507,4 +512,4 @@ curl -s -X POST http://127.0.0.1:8083/invoke/scheduled \
 
 ## License and contributions
 
-This project is a reference implementation; license not specified. Adjust to your own policy.
+See [`LICENSE`](LICENSE): permissive use with **notice** for production use or redistribution, an **expectation to share improvements** back, and a standard **no-warranty / no-liability** disclaimer. Replace the copyright holder and contact placeholders in `LICENSE` with your details.

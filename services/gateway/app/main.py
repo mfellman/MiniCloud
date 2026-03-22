@@ -29,6 +29,11 @@ EGRESS_SSH_URL = os.environ.get("EGRESS_SSH_URL", "").rstrip("/")
 GITLAB_PIPELINE_URL = os.environ.get("GITLAB_PIPELINE_URL", "").strip()
 GITLAB_PROJECT_URL = os.environ.get("GITLAB_PROJECT_URL", "").strip()
 
+# Production: expose only workflow triggers (/v1/run*). Disables /v1/transform and /v1/status
+# so clients cannot reach transformers or enumerate internals without going through workflows.
+_ORCH_ONLY_RAW = os.environ.get("GATEWAY_ORCHESTRATION_ONLY", "").strip().lower()
+GATEWAY_ORCHESTRATION_ONLY = _ORCH_ONLY_RAW in ("1", "true", "yes", "on")
+
 app = FastAPI(title="MiniCloud Gateway", version="0.1.0")
 
 
@@ -95,6 +100,8 @@ async def aggregate_status() -> dict[str, Any]:
     Aggregated health of configured downstream services (parallel probes).
     The **tests** section does not execute pytest; it points to CI / local runs.
     """
+    if GATEWAY_ORCHESTRATION_ONLY:
+        raise HTTPException(status_code=404, detail="Not found")
     services: dict[str, Any] = {}
     tasks: list[Any] = []
 
@@ -175,6 +182,8 @@ async def transform(
     body: TransformBody,
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
 ) -> Response:
+    if GATEWAY_ORCHESTRATION_ONLY:
+        raise HTTPException(status_code=404, detail="Not found")
     rid = x_request_id or str(uuid.uuid4())
     url = f"{TRANSFORMERS_BASE_URL}{TRANSFORMERS_APPLY_PATH}"
     headers = {"X-Request-ID": rid, "Content-Type": "application/json"}

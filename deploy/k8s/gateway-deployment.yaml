@@ -24,20 +24,13 @@ spec:
           image: minicloud/gateway:latest
           imagePullPolicy: IfNotPresent
           env:
-            - name: TRANSFORMERS_URL
-              value: http://transformers:8080
-            - name: TRANSFORMERS_APPLY_PATH
-              value: /applyXSLT
+            # Only POST /v1/run and /v1/run/{name} are usable from outside; /v1/transform and /v1/status return 404.
+            - name: GATEWAY_ORCHESTRATION_ONLY
+              value: "true"
             - name: ORCHESTRATOR_URL
               value: http://orchestrator:8080
             - name: ORCHESTRATOR_RUN_PATH
               value: /run
-            - name: EGRESS_HTTP_URL
-              value: http://egress-http:8080
-            - name: EGRESS_FTP_URL
-              value: http://egress-ftp:8080
-            - name: EGRESS_SSH_URL
-              value: http://egress-ssh:8080
           ports:
             - name: http
               containerPort: 8080
