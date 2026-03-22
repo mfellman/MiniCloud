@@ -1,139 +1,149 @@
 # GitLab (repository + CI + registry)
 
-Korte gids voor het project op **GitLab** te zetten en images automatisch te bouwen.
+Short guide to host this project on **GitLab** and build images automatically.
 
 ---
 
-## 1. Project koppelen en eerste push
+## 1. Connect the project and first push
 
-### 1.1 URL van je GitLab-project
+### 1.1 Your GitLab project URL
 
-1. Open je project op GitLab.
-2. Klik op **Code** (of **Clone**) en kopieer de **HTTPS**- of **SSH**-URL, bijvoorbeeld:
-   - HTTPS: `https://gitlab.com/jouw-groep/minicloud.git`
-   - SSH: `git@gitlab.com:jouw-groep/minicloud.git`
+1. Open your project on GitLab.
+2. Click **Code** (or **Clone**) and copy the **HTTPS** or **SSH** URL, for example:
+   - HTTPS: `https://gitlab.com/your-group/minicloud.git`
+   - SSH: `git@gitlab.com:your-group/minicloud.git`
 
-### 1.2 Lokaal: remote toevoegen en pushen
+### 1.2 Locally: add remote and push
 
-In de map van dit project (als hier al `git init` en een commit zijn gedaan):
+In this project directory (if `git init` and a commit already exist):
 
 ```bash
-cd /pad/naar/MiniCloud
-git remote add origin https://gitlab.com/<groep>/<project>.git
+cd /path/to/MiniCloud
+git remote add origin https://gitlab.com/<group>/<project>.git
 git push -u origin main
 ```
 
-- **Eerste keer HTTPS**: GitLab vraagt om inloggen. Gebruik je **gebruikersnaam** en een **Personal Access Token** als wachtwoord (niet je accountwachtwoord als je 2FA aan hebt):  
+- **First time HTTPS**: GitLab asks for login. Use your **username** and a **Personal Access Token** as the password (not your account password if 2FA is on):  
   **Edit profile → Access Tokens** → scope **`write_repository`**.
-- **SSH**: voeg je publieke sleutel toe onder **Edit profile → SSH Keys**, gebruik dan de SSH-URL bij `git remote add`.
+- **SSH**: add your public key under **Edit profile → SSH Keys**, then use the SSH URL with `git remote add`.
 
-### 1.3 Leeg project vs. project met README
+### 1.3 Empty project vs project with README
 
-| Situatie | Wat te doen |
-|----------|-------------|
-| **Leeg project** (GitLab zegt “push an existing repository”) | `git push -u origin main` na `git remote add` volstaat. |
-| **Project met README/licentie** aangemaakt | Eerst ophalen en samenvoegen: `git pull origin main --allow-unrelated-histories`, conflicten oplossen, daarna `git push -u origin main`. |
+| Situation | What to do |
+|-----------|------------|
+| **Empty project** (GitLab says “push an existing repository”) | `git push -u origin main` after `git remote add` is enough. |
+| **Project created with README/license** | Fetch and merge first: `git pull origin main --allow-unrelated-histories`, resolve conflicts, then `git push -u origin main`. |
 
-### 1.4 Git-gebruikersnaam (eenmalig op je machine)
+### 1.4 Git username (one-time on your machine)
 
-Zet je naam en e-mail voor commits (aanbevolen):
+Set name and email for commits (recommended):
 
 ```bash
-git config --global user.name "Jouw Naam"
-git config --global user.email "jouw@email"
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
 ```
 
-Als dit project al een eerste commit heeft met een tijdelijke auteur, kun je die later aanpassen met `git commit --amend` of voor nieuwe commits volstaat bovenstaande config.
+If this repo already has a first commit with a temporary author, you can amend later with `git commit --amend` or rely on the config above for new commits.
 
-### 1.5 Vanaf nul (als je nog geen git-repo hebt)
+### 1.5 From scratch (no git repo yet)
 
 ```bash
 git init -b main
 git add .
 git commit -m "Initial commit"
-git remote add origin https://gitlab.com/<groep>/<project>.git
+git remote add origin https://gitlab.com/<group>/<project>.git
 git push -u origin main
 ```
 
 ---
 
-## 2. Container Registry inschakelen
+## 2. Enable the Container Registry
 
 1. **Settings → General → Visibility, project features, permissions**
-2. Zet **Container Registry** aan (vaak standaard aan op gitlab.com).
-3. Je registry-basis is dan:
+2. Turn **Container Registry** on (often on by default on gitlab.com).
+3. Your registry base is then:
 
-   `registry.gitlab.com/<groep>/<project>`
+   `registry.gitlab.com/<group>/<project>`
 
-   Elke service wordt gepusht als:
+   Each service image is pushed as:
 
-   - `registry.gitlab.com/<groep>/<project>/gateway:<tag>`
-   - `.../xslt:<tag>`
-   - `.../httpcall:<tag>`
+   - `registry.gitlab.com/<group>/<project>/gateway:<tag>`
+   - `.../transformers:<tag>`
+   - `.../egress-http:<tag>`
+   - `.../egress-ftp:<tag>`
+   - `.../egress-ssh:<tag>`
    - `.../orchestrator:<tag>`
 
-   Tags: `latest` en de **korte commit-SHA** (`CI_COMMIT_SHORT_SHA`), zie [`.gitlab-ci.yml`](../.gitlab-ci.yml).
+   Tags: `latest` and the short commit SHA (`CI_COMMIT_SHORT_SHA`), see [`.gitlab-ci.yml`](../.gitlab-ci.yml).
 
 ---
 
-## 3. CI/CD-pipeline
+## 3. CI/CD pipeline
 
-Het bestand **[`.gitlab-ci.yml`](../.gitlab-ci.yml)** staat in de root. Het gebruikt **Kaniko** (geen Docker-in-Docker nodig) en bouwt de vier images parallel.
+The **[`.gitlab-ci.yml`](../.gitlab-ci.yml)** file lives in the repo root. It uses **Kaniko** (no Docker-in-Docker) and builds service images in parallel.
 
-- Bij elke **push naar een branch** of **tag** draaien de build-jobs (zie `rules` in het YAML).
-- Op **gitlab.com shared runners** werkt dit doorgaans direct; op **eigen GitLab** moeten runners beschikbaar zijn en outbound internet toestaan (Kaniko haalt base images op).
+- On every **push to a branch** or **tag**, build jobs run (see `rules` in the YAML).
+- On **gitlab.com shared runners** this usually works out of the box; on **self-managed GitLab** you need runners and outbound internet (Kaniko pulls base images).
 
-Eerste run: controleer **CI/CD → Pipelines**; bij falen de joblogs bekijken (vaak registry-auth of netwerk).
+First run: check **CI/CD → Pipelines**; on failure read job logs (often registry auth or network).
 
 ---
 
-## 4. Kubernetes: images uit GitLab gebruiken
+## 4. Kubernetes: use GitLab images
 
-De manifests onder `deploy/k8s/` verwijzen nu naar `minicloud/<service>:latest`. Voor productie vervang je dat door je registry-paden.
+Manifests under `deploy/k8s/` currently reference `minicloud/<service>:latest`. For a **step-by-step full-stack deploy** (namespace, pull secrets, Kustomize overlay, verification), see **[Deploy on Kubernetes (GitLab Registry)](deployment-kubernetes-gitlab.md)**.
 
-**Optie A — handmatig (één keer):**
+For a short manual image override:
+
+**Option A — manual (one-off):**
 
 ```bash
-export REG=registry.gitlab.com/<groep>/<project>
+export REG=registry.gitlab.com/<group>/<project>
 kubectl set image deployment/gateway gateway=${REG}/gateway:latest -n <ns>
-# herhaal voor xslt, httpcall, orchestrator
+# repeat for transformers, egress-http, egress-ftp, egress-ssh, orchestrator
 ```
 
-**Optie B — Kustomize `images:`** in een overlay (aanbevolen voor herhaalbare deploys):
+**Option B — Kustomize `images:`** in an overlay (recommended for repeatable deploys). The repo includes [`deploy/k8s/overlays/gitlab/kustomization.yaml`](../deploy/k8s/overlays/gitlab/kustomization.yaml); edit the registry prefix and run `kubectl apply -k deploy/k8s/overlays/gitlab` (details in [deployment-kubernetes-gitlab.md](deployment-kubernetes-gitlab.md)).
 
 ```yaml
-# bijv. deploy/k8s/overlays/gitlab/kustomization.yaml
+# e.g. deploy/k8s/overlays/gitlab/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../../  # of verwijs naar je base
+  - ../../  # or point to your base
 images:
   - name: minicloud/gateway
-    newName: registry.gitlab.com/<groep>/<project>/gateway
+    newName: registry.gitlab.com/<group>/<project>/gateway
     newTag: latest
-  - name: minicloud/xslt
-    newName: registry.gitlab.com/<groep>/<project>/xslt
+  - name: minicloud/transformers
+    newName: registry.gitlab.com/<group>/<project>/transformers
     newTag: latest
-  - name: minicloud/httpcall
-    newName: registry.gitlab.com/<groep>/<project>/httpcall
+  - name: minicloud/egress-http
+    newName: registry.gitlab.com/<group>/<project>/egress-http
+    newTag: latest
+  - name: minicloud/egress-ftp
+    newName: registry.gitlab.com/<group>/<project>/egress-ftp
+    newTag: latest
+  - name: minicloud/egress-ssh
+    newName: registry.gitlab.com/<group>/<project>/egress-ssh
     newTag: latest
   - name: minicloud/orchestrator
-    newName: registry.gitlab.com/<groep>/<project>/orchestrator
+    newName: registry.gitlab.com/<group>/<project>/orchestrator
     newTag: latest
 ```
 
-Het cluster moet de registry kunnen pullen: **Deploy token** of **robot account**, of imagePullSecrets. Zie [GitLab: Authenticate with container registry](https://docs.gitlab.com/ee/user/packages/container_registry/authenticate_with_container_registry.html).
+The cluster must be able to pull from the registry: **deploy token**, **robot account**, or **imagePullSecrets**. See [GitLab: Authenticate with container registry](https://docs.gitlab.com/ee/user/packages/container_registry/authenticate_with_container_registry.html).
 
 ---
 
-## 5. Wat GitLab níet voor je doet
+## 5. What GitLab does not do for you
 
-- De **applicatie zelf** (vier pods + services) draait niet “op GitLab”; die draait op **jouw Kubernetes** (of elders). GitLab levert vooral **git**, **CI**, en **registry**.
-- **Deploy naar K8s** kun je later als aparte CI-job toevoegen (`kubectl`, Helm, Flux, enz.).
+- The **application** (pods + services) does not run “on GitLab”; it runs on **your Kubernetes** (or elsewhere). GitLab mainly provides **git**, **CI**, and **registry**.
+- **Deploy to K8s** can be added later as a separate CI job (`kubectl`, Helm, Flux, etc.).
 
 ---
 
-## 6. Terug naar overzicht
+## 6. Back to overview
 
-- [README – aanvullende documentatie](../README.md#aanvullende-documentatie)
-- [Kubernetes (diepgaand)](kubernetes.md)
+- [README – additional documentation](../README.md#additional-documentation)
+- [Kubernetes (in depth)](kubernetes.md)

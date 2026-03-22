@@ -16,5 +16,5 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 COPY app ./app
 USER appuser
 EXPOSE 8080
-ENV XSLT_URL=http://xslt:8080
+ENV TRANSFORMERS_URL=http://transformers:8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

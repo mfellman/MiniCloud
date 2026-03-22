@@ -9,30 +9,88 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from app.connections import load_connections
+from app.oauth_policy import (
+    OAUTH2_APPLY_TO_SCHEDULED,
+    OAUTH2_ENABLED,
+    OAuthScopeDenied,
+    bearer_scopes_from_request,
+    validate_oauth_config_at_startup,
+)
 from app.workflow_runner import WorkflowDoc, load_workflows, run_workflow
 
 LOG = logging.getLogger("orchestrator")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 WORKFLOWS_DIR = Path(os.environ.get("WORKFLOWS_DIR", "/app/workflows"))
-XSLT_BASE_URL = os.environ.get("XSLT_URL", "http://localhost:8081").rstrip("/")
-XSLT_APPLY_PATH = os.environ.get("XSLT_APPLY_PATH", "/apply")
-HTTP_CALL_BASE_URL = os.environ.get("HTTP_CALL_URL", "http://localhost:8082").rstrip("/")
-HTTP_CALL_PATH = os.environ.get("HTTP_CALL_PATH", "/call")
+CONNECTIONS_DIR = Path(os.environ.get("CONNECTIONS_DIR", "/app/connections"))
+TRANSFORMERS_BASE_URL = os.environ.get("TRANSFORMERS_URL", "http://localhost:8081").rstrip("/")
+_EGRESS_HTTP_BASE = os.environ.get(
+    "EGRESS_HTTP_URL",
+    os.environ.get("HTTP_CALL_URL", "http://localhost:8082"),
+).rstrip("/")
+_EGRESS_HTTP_PATH = os.environ.get(
+    "EGRESS_HTTP_PATH",
+    os.environ.get("HTTP_CALL_PATH", "/call"),
+)
+EGRESS_FTP_BASE = os.environ.get("EGRESS_FTP_URL", "http://localhost:8084").rstrip("/")
+EGRESS_SSH_BASE = os.environ.get("EGRESS_SSH_URL", "http://localhost:8085").rstrip("/")
 REQUEST_TIMEOUT = float(os.environ.get("ORCH_TIMEOUT_SECONDS", "120"))
 
-# Optioneel: vereist Authorization: Bearer <token> voor POST /invoke/scheduled (CronJob / interne caller).
+# Optioneel: Bearer voor POST /run en POST /run/{name} (HTTP-triggers, o.a. via gateway).
+# Genegeerd wanneer OAUTH2_ENABLED (JWT + scopes i.p.v. shared secret).
+HTTP_INVOCATION_TOKEN = os.environ.get("HTTP_INVOCATION_TOKEN", "").strip()
+# Optioneel: Bearer voor POST /invoke/scheduled (CronJob / interne caller).
 SCHEDULE_INVOCATION_TOKEN = os.environ.get("SCHEDULE_INVOCATION_TOKEN", "").strip()
+
+
+def _optional_bearer_or_raise(authorization: str | None, secret: str) -> None:
+    if not secret:
+        return
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization")
+    token = authorization.removeprefix("Bearer ").strip()
+    if token != secret:
+        raise HTTPException(status_code=403, detail="Invalid Bearer token")
+
+
+async def _http_entry_auth(
+    authorization: Annotated[str | None, Header()] = None,
+) -> frozenset[str] | None:
+    """JWT + scopes (OAuth2) of gedeeld geheim (HTTP_INVOCATION_TOKEN)."""
+    if OAUTH2_ENABLED:
+        return bearer_scopes_from_request(authorization)
+    _optional_bearer_or_raise(authorization, HTTP_INVOCATION_TOKEN)
+    return None
+
+
+async def _schedule_entry_auth(
+    authorization: Annotated[str | None, Header()] = None,
+) -> frozenset[str] | None:
+    if OAUTH2_ENABLED and OAUTH2_APPLY_TO_SCHEDULED:
+        return bearer_scopes_from_request(authorization)
+    _optional_bearer_or_raise(authorization, SCHEDULE_INVOCATION_TOKEN)
+    return None
+
 
 app = FastAPI(title="MiniCloud Orchestrator", version="0.1.0")
 _WORKFLOWS: dict[str, WorkflowDoc] = {}
+_CONNECTIONS: dict[str, object] = {}
 
 
 @app.on_event("startup")
 def startup() -> None:
-    global _WORKFLOWS  # noqa: PLW0603
+    global _WORKFLOWS, _CONNECTIONS  # noqa: PLW0603
+    validate_oauth_config_at_startup()
     _WORKFLOWS = load_workflows(WORKFLOWS_DIR)
-    LOG.info("orchestrator loaded %d workflow(s) from %s", len(_WORKFLOWS), WORKFLOWS_DIR)
+    _CONNECTIONS = load_connections(CONNECTIONS_DIR)
+    LOG.info(
+        "orchestrator loaded %d workflow(s) from %s, %d connection(s) from %s",
+        len(_WORKFLOWS),
+        WORKFLOWS_DIR,
+        len(_CONNECTIONS),
+        CONNECTIONS_DIR,
+    )
 
 
 def _require_http(doc: WorkflowDoc) -> None:
@@ -51,19 +109,6 @@ def _require_schedule(doc: WorkflowDoc) -> None:
         )
 
 
-async def _verify_schedule_auth(
-    authorization: Annotated[str | None, Header()] = None,
-) -> bool:
-    if not SCHEDULE_INVOCATION_TOKEN:
-        return True
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization")
-    token = authorization.removeprefix("Bearer ").strip()
-    if token != SCHEDULE_INVOCATION_TOKEN:
-        raise HTTPException(status_code=403, detail="Invalid schedule invocation token")
-    return True
-
-
 @app.get("/healthz")
 def healthz() -> dict:
     return {"status": "ok"}
@@ -71,7 +116,11 @@ def healthz() -> dict:
 
 @app.get("/readyz")
 def readyz() -> dict:
-    return {"status": "ready", "workflows": len(_WORKFLOWS)}
+    return {
+        "status": "ready",
+        "workflows": len(_WORKFLOWS),
+        "connections": len(_CONNECTIONS),
+    }
 
 
 @app.get("/workflows")
@@ -111,19 +160,29 @@ async def _execute(
     *,
     rid: str,
     workflow_label: str,
+    granted_scopes: frozenset[str] | None = None,
 ) -> PlainTextResponse:
-    xslt_url = f"{XSLT_BASE_URL}{XSLT_APPLY_PATH}"
-    http_url = f"{HTTP_CALL_BASE_URL}{HTTP_CALL_PATH}"
+    egress_http_url = f"{_EGRESS_HTTP_BASE}{_EGRESS_HTTP_PATH}"
+    egress_ftp_url = f"{EGRESS_FTP_BASE}/ftp"
+    egress_ssh_url = f"{EGRESS_SSH_BASE}/exec"
+    egress_sftp_url = f"{EGRESS_SSH_BASE}/sftp"
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            final_body, _outputs, trace = await run_workflow(
+            final_body, _outputs, trace, _ctx = await run_workflow(
                 doc,
                 xml,
-                xslt_apply_url=xslt_url,
-                http_call_url=http_url,
+                transformers_base_url=TRANSFORMERS_BASE_URL,
+                egress_http_url=egress_http_url,
+                egress_ftp_url=egress_ftp_url,
+                egress_ssh_url=egress_ssh_url,
+                egress_sftp_url=egress_sftp_url,
                 request_id=rid,
                 httpx_client=client,
+                granted_scopes=granted_scopes,
+                connections=_CONNECTIONS,
             )
+    except OAuthScopeDenied as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except RuntimeError as e:
         LOG.warning("workflow failed request_id=%s: %s", rid, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
@@ -142,7 +201,7 @@ async def _execute(
     )
     return PlainTextResponse(
         content=final_body,
-        media_type="application/xml; charset=utf-8",
+        media_type="text/plain; charset=utf-8",
         headers={"X-Request-ID": rid},
     )
 
@@ -152,6 +211,7 @@ async def run_by_path(
     workflow_name: str,
     body: XmlBody,
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
+    granted_scopes: frozenset[str] | None = Depends(_http_entry_auth),
 ) -> PlainTextResponse:
     """HTTP-entry: workflow wordt gekozen via URL-pad; vereist allow_http op de workflow."""
     rid = x_request_id or str(uuid.uuid4())
@@ -162,13 +222,20 @@ async def run_by_path(
             detail=f"Unknown workflow: {workflow_name!r}. Available: {sorted(_WORKFLOWS.keys())}",
         )
     _require_http(doc)
-    return await _execute(doc, body.xml, rid=rid, workflow_label=workflow_name)
+    return await _execute(
+        doc,
+        body.xml,
+        rid=rid,
+        workflow_label=workflow_name,
+        granted_scopes=granted_scopes,
+    )
 
 
 @app.post("/run")
 async def run_by_body(
     body: RunBody,
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
+    granted_scopes: frozenset[str] | None = Depends(_http_entry_auth),
 ) -> PlainTextResponse:
     """Legacy: workflow in body. Zelfde HTTP-policy als pad-variant."""
     rid = x_request_id or str(uuid.uuid4())
@@ -179,18 +246,24 @@ async def run_by_body(
             detail=f"Unknown workflow: {body.workflow!r}. Available: {sorted(_WORKFLOWS.keys())}",
         )
     _require_http(doc)
-    return await _execute(doc, body.xml, rid=rid, workflow_label=body.workflow)
+    return await _execute(
+        doc,
+        body.xml,
+        rid=rid,
+        workflow_label=body.workflow,
+        granted_scopes=granted_scopes,
+    )
 
 
 @app.post("/invoke/scheduled")
 async def invoke_scheduled(
     body: RunBody,
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
-    _: bool = Depends(_verify_schedule_auth),
+    granted_scopes: frozenset[str] | None = Depends(_schedule_entry_auth),
 ) -> PlainTextResponse:
     """
     Aanroep voor CronJobs / interne scheduler: alleen workflows met allow_schedule: true.
-    Optioneel beveiligen met SCHEDULE_INVOCATION_TOKEN (Bearer).
+    Zonder OAuth2: optioneel SCHEDULE_INVOCATION_TOKEN. Met OAuth2: zelfde JWT+scopes als /run.
     """
     rid = x_request_id or str(uuid.uuid4())
     doc = _WORKFLOWS.get(body.workflow)
@@ -200,4 +273,10 @@ async def invoke_scheduled(
             detail=f"Unknown workflow: {body.workflow!r}. Available: {sorted(_WORKFLOWS.keys())}",
         )
     _require_schedule(doc)
-    return await _execute(doc, body.xml, rid=rid, workflow_label=body.workflow)
+    return await _execute(
+        doc,
+        body.xml,
+        rid=rid,
+        workflow_label=body.workflow,
+        granted_scopes=granted_scopes,
+    )

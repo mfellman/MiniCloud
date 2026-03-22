@@ -24,28 +24,50 @@ spec:
           image: minicloud/orchestrator:latest
           imagePullPolicy: IfNotPresent
           env:
-            - name: XSLT_URL
-              value: http://xslt:8080
-            - name: XSLT_APPLY_PATH
-              value: /apply
-            - name: HTTP_CALL_URL
-              value: http://httpcall:8080
-            - name: HTTP_CALL_PATH
+            - name: TRANSFORMERS_URL
+              value: http://transformers:8080
+            - name: EGRESS_HTTP_URL
+              value: http://egress-http:8080
+            - name: EGRESS_HTTP_PATH
               value: /call
+            - name: EGRESS_FTP_URL
+              value: http://egress-ftp:8080
+            - name: EGRESS_SSH_URL
+              value: http://egress-ssh:8080
             - name: WORKFLOWS_DIR
               value: /app/workflows
-            # Optioneel: Bearer-token voor POST /invoke/scheduled (CronJob / interne caller)
+            - name: CONNECTIONS_DIR
+              value: /app/connections
+            # Optioneel: Bearer voor POST /run en POST /run/{name} (HTTP / gateway /v1/run)
+            # - name: HTTP_INVOCATION_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: minicloud-http-invoke-token
+            #       key: token
+            # Optioneel: Bearer voor POST /invoke/scheduled (CronJob / interne caller)
             # - name: SCHEDULE_INVOCATION_TOKEN
             #   valueFrom:
             #     secretKeyRef:
             #       name: minicloud-schedule-token
             #       key: token
+            # OAuth2 resource server (JWT + scopes); zie docs/oauth-authorization.md
+            # - name: OAUTH2_ENABLED
+            #   value: "true"
+            # - name: OAUTH2_JWKS_URI
+            #   value: "https://idp.example.com/realms/yourrealm/protocol/openid-connect/certs"
+            # - name: OAUTH2_ISSUER
+            #   value: "https://idp.example.com/realms/yourrealm"
+            # - name: OAUTH2_AUDIENCE
+            #   value: "minicloud-orchestrator"
           ports:
             - name: http
               containerPort: 8080
           volumeMounts:
             - name: workflows
               mountPath: /app/workflows
+              readOnly: true
+            - name: connections
+              mountPath: /app/connections
               readOnly: true
           readinessProbe:
             httpGet:
@@ -69,3 +91,6 @@ spec:
         - name: workflows
           configMap:
             name: minicloud-workflows
+        - name: connections
+          configMap:
+            name: minicloud-connections

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: transformers
+  labels:
+    app.kubernetes.io/name: minicloud
+    app.kubernetes.io/component: transformers
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: transformers
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

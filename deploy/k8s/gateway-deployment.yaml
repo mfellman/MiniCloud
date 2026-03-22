@@ -24,10 +24,9 @@ spec:
           image: minicloud/gateway:latest
           imagePullPolicy: IfNotPresent
           env:
-            - name: XSLT_URL
-              value: http://xslt:8080
-            - name: XSLT_APPLY_PATH
-              value: /apply
+            # Only POST /v1/run and /v1/run/{name} are usable from outside; /v1/transform and /v1/status return 404.
+            - name: GATEWAY_ORCHESTRATION_ONLY
+              value: "true"
             - name: ORCHESTRATOR_URL
               value: http://orchestrator:8080
             - name: ORCHESTRATOR_RUN_PATH

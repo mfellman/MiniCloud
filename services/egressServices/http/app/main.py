@@ -1,3 +1,4 @@
+"""Uitgaande HTTP-requests (voorheen httpcall)."""
 import logging
 import os
 from typing import Annotated
@@ -7,13 +8,14 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
-LOG = logging.getLogger("httpcall")
+LOG = logging.getLogger("egress.http")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
-DEFAULT_TIMEOUT = float(os.environ.get("HTTP_CALL_TIMEOUT_SECONDS", "60"))
-MAX_RESPONSE_BYTES = int(os.environ.get("HTTP_CALL_MAX_RESPONSE_BYTES", str(10 * 1024 * 1024)))
-# Leeg = geen restrictie; anders comma-gescheiden hostnamen (geen SSRF naar willekeurige hosts)
-_ALLOWED_HOSTS_RAW = os.environ.get("HTTP_ALLOWED_HOSTS", "").strip()
+DEFAULT_TIMEOUT = float(os.environ.get("HTTP_EGRESS_TIMEOUT_SECONDS", "60"))
+MAX_RESPONSE_BYTES = int(
+    os.environ.get("HTTP_EGRESS_MAX_RESPONSE_BYTES", str(10 * 1024 * 1024)),
+)
+_ALLOWED_HOSTS_RAW = os.environ.get("HTTP_EGRESS_ALLOWED_HOSTS", "").strip()
 
 
 def _allowed_hosts() -> set[str] | None:
@@ -30,12 +32,11 @@ def _check_host_allowed(url: str) -> None:
     if host not in allowed:
         raise HTTPException(
             status_code=400,
-            detail=f"Host not allowed: {host!r} (configure HTTP_ALLOWED_HOSTS)",
+            detail=f"Host not allowed: {host!r} (configure HTTP_EGRESS_ALLOWED_HOSTS)",
         )
 
 
-app = FastAPI(title="MiniCloud HTTP call", version="0.1.0")
-
+app = FastAPI(title="MiniCloud egress HTTP", version="0.1.0")
 
 _METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
 

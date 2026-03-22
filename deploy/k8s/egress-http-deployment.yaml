@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egress-http
+  labels:
+    app.kubernetes.io/name: minicloud
+    app.kubernetes.io/component: egress-http
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: egress-http
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: egress-http
+        app.kubernetes.io/component: egress-http
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: egress-http
+          image: minicloud/egress-http:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi

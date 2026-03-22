@@ -10,6 +10,7 @@ venv/
 !.env.example
 
 # IDE / editor
+.cursor/
 .idea/
 .vscode/
 *.swp

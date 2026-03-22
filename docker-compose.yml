@@ -1,19 +1,35 @@
 services:
-  xslt:
+  egress-http:
     build:
-      context: ./services/xslt
+      context: ./services/egressServices/http
       dockerfile: Dockerfile
-    image: minicloud/xslt:latest
-    ports:
-      - "8081:8080"
-
-  httpcall:
-    build:
-      context: ./services/httpcall
-      dockerfile: Dockerfile
-    image: minicloud/httpcall:latest
+    image: minicloud/egress-http:latest
     ports:
       - "8082:8080"
+
+  egress-ftp:
+    build:
+      context: ./services/egressServices/ftp
+      dockerfile: Dockerfile
+    image: minicloud/egress-ftp:latest
+    ports:
+      - "8084:8080"
+
+  egress-ssh:
+    build:
+      context: ./services/egressServices/ssh
+      dockerfile: Dockerfile
+    image: minicloud/egress-ssh:latest
+    ports:
+      - "8085:8080"
+
+  transformers:
+    build:
+      context: ./services/transformers
+      dockerfile: Dockerfile
+    image: minicloud/transformers:latest
+    ports:
+      - "8081:8080"
 
   orchestrator:
     build:
@@ -23,14 +39,20 @@ services:
     ports:
       - "8083:8080"
     environment:
-      XSLT_URL: http://xslt:8080
-      HTTP_CALL_URL: http://httpcall:8080
+      TRANSFORMERS_URL: http://transformers:8080
+      EGRESS_HTTP_URL: http://egress-http:8080
+      EGRESS_FTP_URL: http://egress-ftp:8080
+      EGRESS_SSH_URL: http://egress-ssh:8080
       WORKFLOWS_DIR: /app/workflows
+      CONNECTIONS_DIR: /app/connections
     volumes:
       - ./services/orchestrator/workflows:/app/workflows:ro
+      - ./services/orchestrator/connections:/app/connections:ro
     depends_on:
-      - xslt
-      - httpcall
+      - egress-http
+      - egress-ftp
+      - egress-ssh
+      - transformers
 
   gateway:
     build:
@@ -40,8 +62,14 @@ services:
     ports:
       - "8080:8080"
     environment:
-      XSLT_URL: http://xslt:8080
+      TRANSFORMERS_URL: http://transformers:8080
       ORCHESTRATOR_URL: http://orchestrator:8080
+      EGRESS_HTTP_URL: http://egress-http:8080
+      EGRESS_FTP_URL: http://egress-ftp:8080
+      EGRESS_SSH_URL: http://egress-ssh:8080
     depends_on:
-      - xslt
+      - transformers
       - orchestrator
+      - egress-http
+      - egress-ftp
+      - egress-ssh

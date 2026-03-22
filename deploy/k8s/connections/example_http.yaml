@@ -1,0 +1,6 @@
+# Zie services/orchestrator/connections/example_http.yaml — zelfde voorbeeld voor Kustomize.
+name: httpbin_example
+type: http
+base_url: https://httpbin.org
+default_headers:
+  Content-Type: application/xml
