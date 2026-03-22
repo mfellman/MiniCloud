@@ -225,8 +225,11 @@ async def _forward_orchestrator(
     *,
     json_body: dict,
     rid: str,
+    authorization: str | None = None,
 ) -> Response:
     headers = {"X-Request-ID": rid, "Content-Type": "application/json"}
+    if authorization:
+        headers["Authorization"] = authorization
     LOG.info("forwarding workflow request_id=%s -> %s", rid, url)
     try:
         async with httpx.AsyncClient(timeout=ORCH_TIMEOUT) as client:
@@ -264,6 +267,7 @@ async def run_workflow_by_url(
     workflow_name: str,
     body: XmlOnlyBody,
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> Response:
     """HTTP-trigger: workflow wordt gekozen via pad (bv. /v1/run/demo)."""
     if not ORCHESTRATOR_URL:
@@ -274,13 +278,19 @@ async def run_workflow_by_url(
     rid = x_request_id or str(uuid.uuid4())
     path = f"/run/{quote(workflow_name, safe='')}"
     url = f"{ORCHESTRATOR_URL}{path}"
-    return await _forward_orchestrator(url, json_body={"xml": body.xml}, rid=rid)
+    return await _forward_orchestrator(
+        url,
+        json_body={"xml": body.xml},
+        rid=rid,
+        authorization=authorization,
+    )
 
 
 @app.post("/v1/run")
 async def run_workflow(
     body: RunWorkflowBody,
     x_request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> Response:
     """Legacy: workflownaam in JSON-body."""
     if not ORCHESTRATOR_URL:
@@ -291,4 +301,9 @@ async def run_workflow(
     rid = x_request_id or str(uuid.uuid4())
     url = f"{ORCHESTRATOR_URL}{ORCHESTRATOR_RUN_PATH}"
     payload = {"workflow": body.workflow, "xml": body.xml}
-    return await _forward_orchestrator(url, json_body=payload, rid=rid)
+    return await _forward_orchestrator(
+        url,
+        json_body=payload,
+        rid=rid,
+        authorization=authorization,
+    )

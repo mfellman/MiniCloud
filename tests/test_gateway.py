@@ -83,6 +83,33 @@ def test_orchestration_only_hides_transform_and_status(gateway_app, monkeypatch)
     assert c.get("/v1/status").status_code == 404
 
 
+def test_v1_run_forwards_authorization_header(gateway_app, monkeypatch):
+    import app.main as gw
+
+    monkeypatch.setattr(gw, "ORCHESTRATOR_URL", "http://orch:8080")
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.content = b"<ok/>"
+    mock_resp.text = "<ok/>"
+    mock_resp.headers = httpx.Headers({"content-type": "application/xml; charset=utf-8"})
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.main.httpx.AsyncClient", return_value=mock_client):
+        c = TestClient(gateway_app)
+        c.post(
+            "/v1/run/minimal",
+            json={"xml": "<r/>"},
+            headers={"Authorization": "Bearer tok"},
+        )
+
+    sent_headers = mock_client.post.call_args.kwargs.get("headers", {})
+    assert sent_headers.get("Authorization") == "Bearer tok"
+
+
 def test_v1_run_without_orchestrator_returns_503(gateway_app, monkeypatch):
     import app.main as gw
 

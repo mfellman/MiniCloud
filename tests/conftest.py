@@ -17,6 +17,10 @@ os.environ.setdefault(
     "WORKFLOWS_DIR",
     str(REPO_ROOT / "services" / "orchestrator" / "workflows"),
 )
+os.environ.setdefault(
+    "CONNECTIONS_DIR",
+    str(REPO_ROOT / "services" / "orchestrator" / "connections"),
+)
 
 # Keep exactly one service root on sys.path; otherwise the wrong `app.main` wins.
 _ACTIVE_SERVICE_ROOTS: list[str] = []

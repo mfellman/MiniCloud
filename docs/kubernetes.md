@@ -86,7 +86,7 @@ curl -s http://127.0.0.1:8080/healthz
 ## 6. Orchestrator: workflows and secrets
 
 - **Workflows**: come from the generated ConfigMap; path in the container: `/app/workflows`.
-- **Optional token** for `POST /invoke/scheduled`: [`orchestrator-deployment.yaml`](../deploy/k8s/orchestrator-deployment.yaml) includes an example comment to load `SCHEDULE_INVOCATION_TOKEN` from a **Secret**. Create a Secret and uncomment to enable.
+- **Optional Bearer tokens** for the orchestrator: **`HTTP_INVOCATION_TOKEN`** (`POST /run`, `POST /run/{name}`) and **`SCHEDULE_INVOCATION_TOKEN`** (`POST /invoke/scheduled`). See [`orchestrator-deployment.yaml`](../deploy/k8s/orchestrator-deployment.yaml) for commented `Secret` examples.
 
 ---
 

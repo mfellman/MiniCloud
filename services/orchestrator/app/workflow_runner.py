@@ -12,6 +12,71 @@ from pydantic import AliasChoices, BaseModel, Field, ValidationError, model_vali
 LOG = logging.getLogger("workflow")
 
 
+def _load_oauth_enforcement():
+    try:
+        from app.oauth_policy import (
+            enforce_connection_oauth as eco,
+            enforce_egress as ef,
+            enforce_workflow_invocation as ew,
+        )
+    except ImportError:
+        import importlib.util
+
+        _policy = Path(__file__).resolve().parent / "oauth_policy.py"
+        spec = importlib.util.spec_from_file_location(
+            "minicloud_oauth_policy_standalone",
+            _policy,
+        )
+        mod = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(mod)
+        ef, ew, eco = (
+            mod.enforce_egress,
+            mod.enforce_workflow_invocation,
+            mod.enforce_connection_oauth,
+        )
+    return ef, ew, eco
+
+
+def _load_resolve_http_url():
+    try:
+        from app.connections import resolve_http_url as rh
+    except ImportError:
+        import importlib.util
+
+        _conn = Path(__file__).resolve().parent / "connections.py"
+        spec = importlib.util.spec_from_file_location(
+            "minicloud_connections_standalone",
+            _conn,
+        )
+        mod = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(mod)
+        rh = mod.resolve_http_url
+    return rh
+
+
+_enforce_egress, _enforce_workflow_invocation, _enforce_connection_oauth = _load_oauth_enforcement()
+_resolve_http_url = _load_resolve_http_url()
+
+
+def _require_connection(
+    connections: dict[str, Any],
+    name: str,
+    expect_type: str,
+    step_id: str,
+) -> Any:
+    if name not in connections:
+        raise RuntimeError(f"step {step_id!r}: unknown connection {name!r}")
+    c = connections[name]
+    got = getattr(c, "type", None)
+    if got != expect_type:
+        raise RuntimeError(
+            f"step {step_id!r}: connection {name!r} has type {got!r}, expected {expect_type!r}",
+        )
+    return c
+
+
 class WhenCondition(BaseModel):
     """Optioneel per stap: voer alleen uit als `context[context_key]` matcht (IF / CASE-arm)."""
 
@@ -38,7 +103,14 @@ class WhenMixin(BaseModel):
 
 class HttpRequestConfig(BaseModel):
     method: str = "GET"
-    url: str
+    url: str | None = Field(
+        default=None,
+        description="Volledige URL (zonder connection), of absolute override (https://…) met connection",
+    )
+    path: str | None = Field(
+        default=None,
+        description="Pad t.o.v. connection base_url (met connection); mag met of zonder leading /",
+    )
     headers: dict[str, str] = Field(default_factory=dict)
     body_from: str = Field(
         ...,
@@ -60,12 +132,28 @@ class XsltWorkflowStep(WhenMixin):
 class HttpWorkflowStep(WhenMixin):
     type: Literal["http"] = "http"
     id: str
+    connection: str | None = Field(
+        default=None,
+        description="Naam uit connections/*.yaml; dan base_url + path, of volledige url in http.url",
+    )
     http: HttpRequestConfig
+
+    @model_validator(mode="after")
+    def http_connection_rules(self) -> HttpWorkflowStep:
+        if self.connection is None:
+            if not self.http.url:
+                raise ValueError("http.url is required when connection is omitted")
+        elif self.http.url and self.http.path:
+            raise ValueError("http: with connection, use at most one of http.url (absolute) and http.path")
+        return self
 
 
 class FtpRequestConfig(BaseModel):
     protocol: Literal["ftp", "ftps"] = "ftp"
-    host: str = Field(..., min_length=1)
+    host: str | None = Field(
+        default=None,
+        description="Verplicht zonder connection; bij connection uit connection-definitie",
+    )
     port: int = Field(default=21, ge=1, le=65535)
     username: str = ""
     password: str = ""
@@ -90,13 +178,21 @@ class FtpRequestConfig(BaseModel):
 class FtpWorkflowStep(WhenMixin):
     type: Literal["ftp"] = "ftp"
     id: str
+    connection: str | None = None
     ftp: FtpRequestConfig
+
+    @model_validator(mode="after")
+    def ftp_connection_rules(self) -> FtpWorkflowStep:
+        if self.connection is None:
+            if not self.ftp.host:
+                raise ValueError("ftp.host is required when connection is omitted")
+        return self
 
 
 class SshRequestConfig(BaseModel):
-    host: str = Field(..., min_length=1)
+    host: str | None = Field(default=None, description="Verplicht zonder connection")
     port: int = Field(default=22, ge=1, le=65535)
-    username: str = Field(..., min_length=1)
+    username: str | None = Field(default=None, description="Verplicht zonder connection")
     password: str | None = None
     private_key_from: str | None = Field(
         default=None,
@@ -109,13 +205,26 @@ class SshRequestConfig(BaseModel):
 class SshWorkflowStep(WhenMixin):
     type: Literal["ssh"] = "ssh"
     id: str
+    connection: str | None = None
     ssh: SshRequestConfig
+
+    @model_validator(mode="after")
+    def ssh_connection_rules(self) -> SshWorkflowStep:
+        if self.connection is None:
+            if not self.ssh.host or not self.ssh.username:
+                raise ValueError("ssh.host and ssh.username are required when connection is omitted")
+        else:
+            if self.ssh.host:
+                raise ValueError("ssh.host must not be set when connection is set (use connection definition)")
+            if self.ssh.username:
+                raise ValueError("ssh.username must not be set when connection is set (use connection definition)")
+        return self
 
 
 class SftpRequestConfig(BaseModel):
-    host: str = Field(..., min_length=1)
+    host: str | None = Field(default=None, description="Verplicht zonder connection")
     port: int = Field(default=22, ge=1, le=65535)
-    username: str = Field(..., min_length=1)
+    username: str | None = Field(default=None, description="Verplicht zonder connection")
     password: str | None = None
     private_key_from: str | None = Field(
         default=None,
@@ -140,7 +249,20 @@ class SftpRequestConfig(BaseModel):
 class SftpWorkflowStep(WhenMixin):
     type: Literal["sftp"] = "sftp"
     id: str
+    connection: str | None = None
     sftp: SftpRequestConfig
+
+    @model_validator(mode="after")
+    def sftp_connection_rules(self) -> SftpWorkflowStep:
+        if self.connection is None:
+            if not self.sftp.host or not self.sftp.username:
+                raise ValueError("sftp.host and sftp.username are required when connection is omitted")
+        else:
+            if self.sftp.host:
+                raise ValueError("sftp.host must not be set when connection is set")
+            if self.sftp.username:
+                raise ValueError("sftp.username must not be set when connection is set")
+        return self
 
 
 class Xml2JsonWorkflowStep(WhenMixin):
@@ -464,11 +586,16 @@ async def run_workflow(
     egress_sftp_url: str,
     request_id: str,
     httpx_client: Any,
+    granted_scopes: frozenset[str] | None = None,
+    connections: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, str], list[dict[str, Any]], dict[str, str]]:
     outputs: dict[str, str] = {}
     context: dict[str, str] = {}
     previous = initial_xml
     trace: list[dict[str, Any]] = []
+    conn_reg: dict[str, Any] = connections if connections is not None else {}
+
+    _enforce_workflow_invocation(granted_scopes, doc.name)
 
     for idx, step in enumerate(doc.steps):
         wm = getattr(step, "when", None)
@@ -648,7 +775,26 @@ async def run_workflow(
             previous = body
             trace.append({"step": step.id, "type": "xslt", "ok": True})
         elif isinstance(step, HttpWorkflowStep):
+            _enforce_egress(granted_scopes, "http", step_id=step.id)
             spec = step.http
+            conn_name = step.connection
+            if conn_name:
+                c = _require_connection(conn_reg, conn_name, "http", step.id)
+                _enforce_connection_oauth(
+                    granted_scopes,
+                    getattr(c, "oauth_scope", None),
+                    step_id=step.id,
+                    connection_name=conn_name,
+                )
+                final_url = _resolve_http_url(
+                    base_url=c.base_url,
+                    path_or_url=spec.url,
+                    path=spec.path,
+                )
+                merged_headers = {**getattr(c, "default_headers", {}), **spec.headers}
+            else:
+                final_url = spec.url or ""
+                merged_headers = dict(spec.headers)
             body = _resolve_input(
                 spec.body_from,
                 initial=initial_xml,
@@ -661,8 +807,8 @@ async def run_workflow(
                 egress_http_url,
                 json={
                     "method": spec.method,
-                    "url": spec.url,
-                    "headers": spec.headers,
+                    "url": final_url,
+                    "headers": merged_headers,
                     "body": body,
                     "timeout_seconds": spec.timeout_seconds,
                 },
@@ -694,17 +840,38 @@ async def run_workflow(
                     f"http step {step.id!r} returned status {out_code}",
                 )
         elif isinstance(step, FtpWorkflowStep):
+            _enforce_egress(granted_scopes, "ftp", step_id=step.id)
             spec = step.ftp
-            payload: dict[str, Any] = {
-                "protocol": spec.protocol,
-                "host": spec.host,
-                "port": spec.port,
-                "username": spec.username,
-                "password": spec.password,
-                "action": spec.action,
-                "remote_path": spec.remote_path,
-                "timeout_seconds": spec.timeout_seconds,
-            }
+            conn_name = step.connection
+            if conn_name:
+                c = _require_connection(conn_reg, conn_name, "ftp", step.id)
+                _enforce_connection_oauth(
+                    granted_scopes,
+                    getattr(c, "oauth_scope", None),
+                    step_id=step.id,
+                    connection_name=conn_name,
+                )
+                payload = {
+                    "protocol": c.protocol,
+                    "host": c.host,
+                    "port": c.port,
+                    "username": c.username,
+                    "password": c.password,
+                    "action": spec.action,
+                    "remote_path": spec.remote_path,
+                    "timeout_seconds": spec.timeout_seconds,
+                }
+            else:
+                payload = {
+                    "protocol": spec.protocol,
+                    "host": spec.host,
+                    "port": spec.port,
+                    "username": spec.username,
+                    "password": spec.password,
+                    "action": spec.action,
+                    "remote_path": spec.remote_path,
+                    "timeout_seconds": spec.timeout_seconds,
+                }
             if spec.action == "store":
                 raw = _resolve_input(
                     spec.body_from,
@@ -736,25 +903,58 @@ async def run_workflow(
             previous = out_body
             trace.append({"step": step.id, "type": "ftp", "ok": True})
         elif isinstance(step, SshWorkflowStep):
+            _enforce_egress(granted_scopes, "ssh", step_id=step.id)
             spec = step.ssh
-            payload = {
-                "host": spec.host,
-                "port": spec.port,
-                "username": spec.username,
-                "password": spec.password,
-                "command": spec.command,
-                "timeout_seconds": spec.timeout_seconds,
-            }
-            if spec.private_key_from is not None:
-                pem = _resolve_input(
-                    spec.private_key_from,
-                    initial=initial_xml,
-                    previous=previous,
-                    outputs=outputs,
-                    step_index=idx,
-                    context=context,
+            conn_name = step.connection
+            if conn_name:
+                c = _require_connection(conn_reg, conn_name, "ssh", step.id)
+                _enforce_connection_oauth(
+                    granted_scopes,
+                    getattr(c, "oauth_scope", None),
+                    step_id=step.id,
+                    connection_name=conn_name,
                 )
-                payload["private_key_pem"] = pem
+                payload = {
+                    "host": c.host,
+                    "port": c.port,
+                    "username": c.username,
+                    "password": c.password,
+                    "command": spec.command,
+                    "timeout_seconds": spec.timeout_seconds,
+                }
+                pem: str | None = None
+                if spec.private_key_from is not None:
+                    pem = _resolve_input(
+                        spec.private_key_from,
+                        initial=initial_xml,
+                        previous=previous,
+                        outputs=outputs,
+                        step_index=idx,
+                        context=context,
+                    )
+                elif getattr(c, "private_key_pem", None):
+                    pem = c.private_key_pem
+                if pem:
+                    payload["private_key_pem"] = pem
+            else:
+                payload = {
+                    "host": spec.host,
+                    "port": spec.port,
+                    "username": spec.username,
+                    "password": spec.password,
+                    "command": spec.command,
+                    "timeout_seconds": spec.timeout_seconds,
+                }
+                if spec.private_key_from is not None:
+                    pem = _resolve_input(
+                        spec.private_key_from,
+                        initial=initial_xml,
+                        previous=previous,
+                        outputs=outputs,
+                        step_index=idx,
+                        context=context,
+                    )
+                    payload["private_key_pem"] = pem
             r = await httpx_client.post(
                 egress_ssh_url,
                 json=payload,
@@ -778,26 +978,60 @@ async def run_workflow(
                     f"ssh step {step.id!r} exit_status={data.get('exit_status')}",
                 )
         elif isinstance(step, SftpWorkflowStep):
+            _enforce_egress(granted_scopes, "sftp", step_id=step.id)
             spec = step.sftp
-            payload: dict[str, Any] = {
-                "host": spec.host,
-                "port": spec.port,
-                "username": spec.username,
-                "password": spec.password,
-                "action": spec.action,
-                "remote_path": spec.remote_path,
-                "timeout_seconds": spec.timeout_seconds,
-            }
-            if spec.private_key_from is not None:
-                pem = _resolve_input(
-                    spec.private_key_from,
-                    initial=initial_xml,
-                    previous=previous,
-                    outputs=outputs,
-                    step_index=idx,
-                    context=context,
+            conn_name = step.connection
+            if conn_name:
+                c = _require_connection(conn_reg, conn_name, "sftp", step.id)
+                _enforce_connection_oauth(
+                    granted_scopes,
+                    getattr(c, "oauth_scope", None),
+                    step_id=step.id,
+                    connection_name=conn_name,
                 )
-                payload["private_key_pem"] = pem
+                payload = {
+                    "host": c.host,
+                    "port": c.port,
+                    "username": c.username,
+                    "password": c.password,
+                    "action": spec.action,
+                    "remote_path": spec.remote_path,
+                    "timeout_seconds": spec.timeout_seconds,
+                }
+                pem: str | None = None
+                if spec.private_key_from is not None:
+                    pem = _resolve_input(
+                        spec.private_key_from,
+                        initial=initial_xml,
+                        previous=previous,
+                        outputs=outputs,
+                        step_index=idx,
+                        context=context,
+                    )
+                elif getattr(c, "private_key_pem", None):
+                    pem = c.private_key_pem
+                if pem:
+                    payload["private_key_pem"] = pem
+            else:
+                payload = {
+                    "host": spec.host,
+                    "port": spec.port,
+                    "username": spec.username,
+                    "password": spec.password,
+                    "action": spec.action,
+                    "remote_path": spec.remote_path,
+                    "timeout_seconds": spec.timeout_seconds,
+                }
+                if spec.private_key_from is not None:
+                    pem = _resolve_input(
+                        spec.private_key_from,
+                        initial=initial_xml,
+                        previous=previous,
+                        outputs=outputs,
+                        step_index=idx,
+                        context=context,
+                    )
+                    payload["private_key_pem"] = pem
             if spec.action == "store":
                 raw = _resolve_input(
                     spec.body_from,

@@ -11,6 +11,9 @@ configMapGenerator:
       - workflows/minimal.yaml
       - workflows/schedule_only_demo.yaml
       - workflows/transform_demo.yaml
+  - name: minicloud-connections
+    files:
+      - connections/example_http.yaml
 resources:
   - configmap-templates.yaml
   - egress-http-deployment.yaml

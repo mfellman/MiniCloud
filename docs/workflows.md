@@ -2,6 +2,8 @@
 
 This document supplements the [README](../README.md) with details on the workflow model, data between steps, and invocation.
 
+**Author-oriented overview:** if you are writing workflows for the first time, read **[User guide: writing orchestrations](user-guide-orchestrations.md)** first, then use this file as the full reference.
+
 ---
 
 ## 1. File conventions
@@ -42,6 +44,8 @@ steps:
 - Interactive via gateway only: `allow_http: true`, `allow_schedule: false`.
 - Batch/cron only: `allow_http: false`, `allow_schedule: true`.
 - Both (rare): both `true`.
+
+**Optional Bearer tokens (orchestrator environment, not YAML):** if **`HTTP_INVOCATION_TOKEN`** is set, HTTP triggers (`POST /run*`, gateway `/v1/run*`) require `Authorization: Bearer …`. If **`SCHEDULE_INVOCATION_TOKEN`** is set, `POST /invoke/scheduled` requires the same. See [README – Invocation](../README.md#invocation-http-vs-scheduled).
 
 ---
 

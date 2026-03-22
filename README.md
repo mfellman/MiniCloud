@@ -4,6 +4,8 @@ MiniCloud is a lightweight chain of microservices deployable on **Kubernetes**: 
 
 ### Additional documentation
 
+- **[User guide: writing orchestrations](docs/user-guide-orchestrations.md)** — for workflow authors: concepts, step overview, context/`when`, examples, links to the full reference.
+- **[OAuth2 / scopes (orchestrator)](docs/oauth-authorization.md)** — JWT (JWKS), scopes for workflow run + egress, IdP configuration.
 - **[Workflow YAML (in depth)](docs/workflows.md)** — file conventions, `invocation`, steps, `input_from` / `body_from`, data flow.
 - **[Kubernetes (in depth)](docs/kubernetes.md)** — Kustomize, ConfigMaps, images, kind script, Ingress, updates, and security notes.
 - **[Deploy on Kubernetes (GitLab Registry)](docs/deployment-kubernetes-gitlab.md)** — full stack on a cluster with GitLab-built images, pull secrets, and the `deploy/k8s/overlays/gitlab` overlay.
@@ -74,13 +76,15 @@ flowchart LR
 
 Workflow files live in a directory (in containers, default `/app/workflows`). Each workflow is one YAML document with at least a **`name`**, optional **`invocation`**, and a list of **`steps`**.
 
+**New to authoring pipelines?** Start with the **[User guide: writing orchestrations](docs/user-guide-orchestrations.md)**; the sections below are a compact reference.
+
 ### Top level
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | yes | Unique workflow name; must match `.../run/{name}` on the orchestrator/gateway. |
 | `invocation` | no | Who may start the workflow (see [Invocation](#invocation-http-vs-scheduled)). Default: `allow_http: true`, `allow_schedule: false`. |
-| `steps` | yes | Step list: `xslt`, `http`, `ftp`, `ssh`, `sftp`, `xml2json`, `json2xml`, `liquid`. |
+| `steps` | yes | Linear step list — transforms, egress, context helpers, etc. Overview: [User guide §4](docs/user-guide-orchestrations.md#4-step-types-at-a-glance). |
 
 ### Step `type: xslt`
 
@@ -246,9 +250,14 @@ invocation:
 
 This lets you run batch workflows only from an internal scheduler while interactive flows use the gateway.
 
-### Optional token on the scheduled route
+### Optional Bearer tokens vs OAuth2 on the orchestrator
 
-If **`SCHEDULE_INVOCATION_TOKEN`** is set on the orchestrator, **`POST /invoke/scheduled`** must send **`Authorization: Bearer <token>`**. If empty, no token check (in production rely on **NetworkPolicy**, no public Ingress, or set a token).
+| Mode | Configuration |
+|------|----------------|
+| **Shared secret (simple)** | Set **`HTTP_INVOCATION_TOKEN`** and/or **`SCHEDULE_INVOCATION_TOKEN`**. Requires `Authorization: Bearer <secret>`. |
+| **OAuth2 / OIDC (fine-grained)** | Set **`OAUTH2_ENABLED=true`**, **`OAUTH2_JWKS_URI`**, and usually **`OAUTH2_ISSUER`** / **`OAUTH2_AUDIENCE`**. The access token must be a **JWT**; scopes control **which workflows** may run and **which egress types** (`http`, `ftp`, `ssh`, `sftp`) are allowed. See **[OAuth2 / scopes](docs/oauth-authorization.md)**. |
+
+When **`OAUTH2_ENABLED`** is on, static **`HTTP_INVOCATION_TOKEN`** / **`SCHEDULE_INVOCATION_TOKEN`** are **not** used for those routes (JWT replaces them). The gateway **forwards** `Authorization` for `/v1/run*`.
 
 ---
 
@@ -264,8 +273,8 @@ Base URL with Compose: `http://localhost:8080`
 | GET | `/readyz` | — | Readiness. |
 | GET | `/v1/status` | — | Aggregated readiness of configured backends (`GET …/readyz`); JSON includes `overall_ok`, per-service entries, and a **`tests`** block (metadata and optional GitLab links — **pytest is not run** by this endpoint; run tests in CI or locally). **Disabled (404)** when `GATEWAY_ORCHESTRATION_ONLY` is set (default in Kubernetes manifests). |
 | POST | `/v1/transform` | `{"xml":"...","xslt":"..."}` | Direct XSLT; no workflow. **Disabled (404)** when `GATEWAY_ORCHESTRATION_ONLY` is set (use workflows only from the public internet). |
-| POST | `/v1/run/{workflow_name}` | `{"xml":"..."}` | **Preferred HTTP entry**: workflow chosen in the URL. |
-| POST | `/v1/run` | `{"workflow":"...","xml":"..."}` | Legacy: workflow name in JSON. |
+| POST | `/v1/run/{workflow_name}` | `{"xml":"..."}` | **Preferred HTTP entry**: workflow chosen in the URL. Forwards **`Authorization`** to the orchestrator (use when `HTTP_INVOCATION_TOKEN` is set there). |
+| POST | `/v1/run` | `{"workflow":"...","xml":"..."}` | Legacy: workflow name in JSON; same Bearer forwarding. |
 
 Responses usually include the **`X-Request-ID`** header.
 
@@ -279,9 +288,9 @@ Base URL with Compose: `http://localhost:8083`
 | GET | `/readyz` | — | Readiness; includes loaded workflow count. |
 | GET | `/workflows` | — | All workflows with `invocation` metadata. |
 | GET | `/workflows/http` | — | Only workflows with `allow_http: true`. |
-| POST | `/run/{workflow_name}` | `{"xml":"..."}` | HTTP policy: requires `allow_http`. |
+| POST | `/run/{workflow_name}` | `{"xml":"..."}` | HTTP policy: requires `allow_http`. Optional **`Authorization: Bearer`** if `HTTP_INVOCATION_TOKEN` is set. |
 | POST | `/run` | `{"workflow":"...","xml":"..."}` | Same policy as above. |
-| POST | `/invoke/scheduled` | `{"workflow":"...","xml":"..."}` | Schedule policy: requires `allow_schedule`; optional Bearer token. |
+| POST | `/invoke/scheduled` | `{"workflow":"...","xml":"..."}` | Schedule policy: requires `allow_schedule`. Optional Bearer if `SCHEDULE_INVOCATION_TOKEN` is set. |
 
 Successful workflow runs (`/run` …) return **`text/plain; charset=utf-8`** (final step may be XML, JSON text, or plain text).
 
@@ -336,7 +345,13 @@ Response is JSON with `status_code`, `headers`, `body` (text).
 | `EGRESS_FTP_URL` | see code | **egress-ftp** base URL (orchestrator appends `/ftp`). |
 | `EGRESS_SSH_URL` | see code | **egress-ssh** base URL (orchestrator appends `/exec` and `/sftp`). |
 | `ORCH_TIMEOUT_SECONDS` | `120` | HTTP client timeout per workflow run. |
-| `SCHEDULE_INVOCATION_TOKEN` | *(empty)* | If set: Bearer required on `/invoke/scheduled`. |
+| `HTTP_INVOCATION_TOKEN` | *(empty)* | If set (and **`OAUTH2_ENABLED`** is off): shared-secret Bearer on **`POST /run`**. |
+| `SCHEDULE_INVOCATION_TOKEN` | *(empty)* | If set (and OAuth not used for scheduled): Bearer on **`POST /invoke/scheduled`**. |
+| `OAUTH2_ENABLED` | `false` | If `true`: validate JWT via JWKS; enforce scopes (see **[oauth-authorization.md](docs/oauth-authorization.md)**). |
+| `OAUTH2_JWKS_URI` | *(empty)* | JWKS URL (required if OAuth enabled). |
+| `OAUTH2_ISSUER`, `OAUTH2_AUDIENCE` | *(empty)* | JWT `iss` / `aud` validation (recommended). |
+| `OAUTH2_SCOPE_PREFIX` | `minicloud` | Prefix for scope strings in tokens. |
+| `OAUTH2_APPLY_TO_SCHEDULED` | `true` | If `false` with OAuth on, scheduled route uses **`SCHEDULE_INVOCATION_TOKEN`** only (no egress scope checks on that path). |
 | `LOG_LEVEL` | `INFO` | |
 
 ### Egress HTTP
@@ -503,7 +518,8 @@ curl -s -X POST http://127.0.0.1:8083/invoke/scheduled \
 |---------|----------------|
 | 503 on `/v1/run` | `ORCHESTRATOR_URL` not set on the gateway. |
 | 403 “not invokable via HTTP” | Workflow has `allow_http: false` (use the scheduled route or set `allow_http: true`). |
-| 403 on `/invoke/scheduled` | Workflow has `allow_schedule: false`, or wrong/missing Bearer token. |
+| 403 on `/invoke/scheduled` | Workflow has `allow_schedule: false`, or wrong/missing Bearer token (if `SCHEDULE_INVOCATION_TOKEN` is set). |
+| 401/403 on **`POST /run`** (or gateway `/v1/run`) | `HTTP_INVOCATION_TOKEN` is set but `Authorization` is missing or wrong. |
 | 404 unknown workflow | `name` in YAML does not match URL/JSON, or ConfigMap in K8s not updated. |
 | Empty workflow list | Orchestrator does not see `WORKFLOWS_DIR`, or YAML parse errors (check orchestrator logs). |
 | Step timeouts | Raise `ORCH_TIMEOUT_SECONDS` / step timeouts; check network to external URLs. |

@@ -144,8 +144,9 @@ Review and override via Kustomize `configMapGenerator` / `patches` or separate S
 | Area | Examples |
 |------|----------|
 | Gateway | `ORCHESTRATOR_URL`, optional `GATEWAY_ORCHESTRATION_ONLY` (default manifests: `true`; only `/v1/run*` public). No `TRANSFORMERS_URL` on gateway when orchestration-only. |
-| Orchestrator | `TRANSFORMERS_URL`, `EGRESS_HTTP_URL`, `EGRESS_FTP_URL`, `EGRESS_SSH_URL`, `WORKFLOWS_DIR` (default `/app/workflows` when using ConfigMap mount). |
-| Scheduled jobs | `SCHEDULE_INVOCATION_TOKEN` from a **Secret** (see comments in `orchestrator-deployment.yaml`). |
+| Orchestrator | `TRANSFORMERS_URL`, `EGRESS_*`, `WORKFLOWS_DIR`; optional `HTTP_INVOCATION_TOKEN`, `SCHEDULE_INVOCATION_TOKEN` (Secrets). |
+| HTTP workflow triggers | Optional `HTTP_INVOCATION_TOKEN` (**Secret**); gateway forwards `Authorization`. |
+| Scheduled jobs | Optional `SCHEDULE_INVOCATION_TOKEN` (**Secret**); see `orchestrator-deployment.yaml`. |
 | Egress hardening | `HTTP_EGRESS_ALLOWED_HOSTS`, `FTP_EGRESS_ALLOWED_HOSTS`, `SSH_EGRESS_ALLOWED_HOSTS`. |
 
 Base Deployments already set in-cluster URLs for Compose-style names; they remain valid when all services run in the **same namespace**.

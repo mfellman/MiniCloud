@@ -1,0 +1,13 @@
+# Voorbeeld: herbruikbare HTTP-egress. In een workflow-stap:
+#   connection: httpbin_example
+#   http:
+#     method: POST
+#     path: /post
+#     body_from: previous
+name: httpbin_example
+type: http
+base_url: https://httpbin.org
+default_headers:
+  Content-Type: application/xml
+# Optioneel: extra OAuth-scope naast minicloud:egress:http
+# oauth_scope: minicloud:connection:httpbin_example

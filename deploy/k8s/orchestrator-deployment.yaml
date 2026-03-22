@@ -36,18 +36,38 @@ spec:
               value: http://egress-ssh:8080
             - name: WORKFLOWS_DIR
               value: /app/workflows
-            # Optioneel: Bearer-token voor POST /invoke/scheduled (CronJob / interne caller)
+            - name: CONNECTIONS_DIR
+              value: /app/connections
+            # Optioneel: Bearer voor POST /run en POST /run/{name} (HTTP / gateway /v1/run)
+            # - name: HTTP_INVOCATION_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: minicloud-http-invoke-token
+            #       key: token
+            # Optioneel: Bearer voor POST /invoke/scheduled (CronJob / interne caller)
             # - name: SCHEDULE_INVOCATION_TOKEN
             #   valueFrom:
             #     secretKeyRef:
             #       name: minicloud-schedule-token
             #       key: token
+            # OAuth2 resource server (JWT + scopes); zie docs/oauth-authorization.md
+            # - name: OAUTH2_ENABLED
+            #   value: "true"
+            # - name: OAUTH2_JWKS_URI
+            #   value: "https://idp.example.com/realms/yourrealm/protocol/openid-connect/certs"
+            # - name: OAUTH2_ISSUER
+            #   value: "https://idp.example.com/realms/yourrealm"
+            # - name: OAUTH2_AUDIENCE
+            #   value: "minicloud-orchestrator"
           ports:
             - name: http
               containerPort: 8080
           volumeMounts:
             - name: workflows
               mountPath: /app/workflows
+              readOnly: true
+            - name: connections
+              mountPath: /app/connections
               readOnly: true
           readinessProbe:
             httpGet:
@@ -71,3 +91,6 @@ spec:
         - name: workflows
           configMap:
             name: minicloud-workflows
+        - name: connections
+          configMap:
+            name: minicloud-connections
