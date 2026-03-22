@@ -1,0 +1,28 @@
+# Voorbeeld-workflow: XSLT transformeert input; HTTP-stap post het resultaat naar een test-URL.
+# Pas `url` aan naar jouw endpoint. `body_from` verwijst naar output van stap `to_echo`.
+# Gateway: POST /v1/run/demo  met body {"xml":"..."}  (HTTP-entry)
+name: demo
+invocation:
+  allow_http: true
+  allow_schedule: false
+steps:
+  - id: to_echo
+    type: xslt
+    input_from: initial
+    xslt: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+        <xsl:output method="xml" encoding="UTF-8" omit-xml-declaration="no"/>
+        <xsl:template match="/">
+          <echo><xsl:copy-of select="node()|@*"/></echo>
+        </xsl:template>
+      </xsl:stylesheet>
+  - id: notify
+    type: http
+    http:
+      method: POST
+      url: "https://httpbin.org/post"
+      headers:
+        Content-Type: "application/xml"
+      body_from: to_echo
+      timeout_seconds: 30

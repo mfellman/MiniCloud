@@ -1,0 +1,18 @@
+# Alleen voor geplande / interne aanroep (POST /invoke/scheduled), niet via HTTP URL of POST /run.
+# Voorbeeld: CronJob die periodiek een batch draait.
+name: schedule_only_demo
+invocation:
+  allow_http: false
+  allow_schedule: true
+steps:
+  - id: noop
+    type: xslt
+    input_from: initial
+    xslt: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+        <xsl:output method="xml" encoding="UTF-8"/>
+        <xsl:template match="/">
+          <scheduled><xsl:copy-of select="."/></scheduled>
+        </xsl:template>
+      </xsl:stylesheet>

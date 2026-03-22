@@ -1,0 +1,21 @@
+# Optioneel: vereist een Ingress-controller (nginx, traefik, ...).
+# Pas host of class aan naar je cluster. Zonder Ingress: kubectl port-forward svc/gateway 8080:8080
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  labels:
+    app.kubernetes.io/name: minicloud
+    app.kubernetes.io/component: gateway-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080

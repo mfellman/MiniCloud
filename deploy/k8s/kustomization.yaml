@@ -1,0 +1,23 @@
+# kubectl apply -k deploy/k8s
+# Images: minicloud/gateway, xslt, httpcall, orchestrator (zie local-kind.sh)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: minicloud-workflows
+    files:
+      - workflows/demo.yaml
+      - workflows/minimal.yaml
+      - workflows/schedule_only_demo.yaml
+resources:
+  - configmap-templates.yaml
+  - xslt-deployment.yaml
+  - xslt-service.yaml
+  - httpcall-deployment.yaml
+  - httpcall-service.yaml
+  - orchestrator-deployment.yaml
+  - orchestrator-service.yaml
+  - gateway-deployment.yaml
+  - gateway-service.yaml
+  - ingress.yaml

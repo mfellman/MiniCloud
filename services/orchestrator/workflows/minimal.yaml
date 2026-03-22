@@ -1,0 +1,17 @@
+# Alleen XSLT — geen externe HTTP (handig voor offline tests).
+name: minimal
+invocation:
+  allow_http: true
+  allow_schedule: false
+steps:
+  - id: wrap
+    type: xslt
+    input_from: initial
+    xslt: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+        <xsl:output method="xml" encoding="UTF-8"/>
+        <xsl:template match="/">
+          <wrapped><xsl:copy-of select="."/></wrapped>
+        </xsl:template>
+      </xsl:stylesheet>

@@ -1,0 +1,47 @@
+services:
+  xslt:
+    build:
+      context: ./services/xslt
+      dockerfile: Dockerfile
+    image: minicloud/xslt:latest
+    ports:
+      - "8081:8080"
+
+  httpcall:
+    build:
+      context: ./services/httpcall
+      dockerfile: Dockerfile
+    image: minicloud/httpcall:latest
+    ports:
+      - "8082:8080"
+
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    image: minicloud/orchestrator:latest
+    ports:
+      - "8083:8080"
+    environment:
+      XSLT_URL: http://xslt:8080
+      HTTP_CALL_URL: http://httpcall:8080
+      WORKFLOWS_DIR: /app/workflows
+    volumes:
+      - ./services/orchestrator/workflows:/app/workflows:ro
+    depends_on:
+      - xslt
+      - httpcall
+
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    image: minicloud/gateway:latest
+    ports:
+      - "8080:8080"
+    environment:
+      XSLT_URL: http://xslt:8080
+      ORCHESTRATOR_URL: http://orchestrator:8080
+    depends_on:
+      - xslt
+      - orchestrator

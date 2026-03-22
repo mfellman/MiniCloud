@@ -1,0 +1,12 @@
+# Placeholder voor toekomstige vaste XSLT-templates (mount in XSLT-pod of sync via sidecar).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xslt-templates
+  labels:
+    app.kubernetes.io/name: minicloud
+    app.kubernetes.io/component: xslt-templates
+data:
+  README.txt: |
+    Placeholder ConfigMap: voeg hier .xsl bestanden toe en koppel ze later aan de XSLT-service
+    (bijv. volumeMount of initContainer) wanneer je geen inline-xslt meer in de API-body wilt.
