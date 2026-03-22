@@ -1,43 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gateway
+  name: egress-ssh
   labels:
     app.kubernetes.io/name: minicloud
-    app.kubernetes.io/component: gateway
+    app.kubernetes.io/component: egress-ssh
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: gateway
+      app.kubernetes.io/name: egress-ssh
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: gateway
-        app.kubernetes.io/component: gateway
+        app.kubernetes.io/name: egress-ssh
+        app.kubernetes.io/component: egress-ssh
     spec:
       securityContext:
         runAsNonRoot: true
         fsGroup: 10001
       containers:
-        - name: gateway
-          image: minicloud/gateway:latest
+        - name: egress-ssh
+          image: minicloud/egress-ssh:latest
           imagePullPolicy: IfNotPresent
-          env:
-            - name: TRANSFORMERS_URL
-              value: http://transformers:8080
-            - name: TRANSFORMERS_APPLY_PATH
-              value: /applyXSLT
-            - name: ORCHESTRATOR_URL
-              value: http://orchestrator:8080
-            - name: ORCHESTRATOR_RUN_PATH
-              value: /run
-            - name: EGRESS_HTTP_URL
-              value: http://egress-http:8080
-            - name: EGRESS_FTP_URL
-              value: http://egress-ftp:8080
-            - name: EGRESS_SSH_URL
-              value: http://egress-ssh:8080
           ports:
             - name: http
               containerPort: 8080

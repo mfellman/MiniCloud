@@ -15,10 +15,17 @@ LOG = logging.getLogger("orchestrator")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 WORKFLOWS_DIR = Path(os.environ.get("WORKFLOWS_DIR", "/app/workflows"))
-XSLT_BASE_URL = os.environ.get("XSLT_URL", "http://localhost:8081").rstrip("/")
-XSLT_APPLY_PATH = os.environ.get("XSLT_APPLY_PATH", "/apply")
-HTTP_CALL_BASE_URL = os.environ.get("HTTP_CALL_URL", "http://localhost:8082").rstrip("/")
-HTTP_CALL_PATH = os.environ.get("HTTP_CALL_PATH", "/call")
+TRANSFORMERS_BASE_URL = os.environ.get("TRANSFORMERS_URL", "http://localhost:8081").rstrip("/")
+_EGRESS_HTTP_BASE = os.environ.get(
+    "EGRESS_HTTP_URL",
+    os.environ.get("HTTP_CALL_URL", "http://localhost:8082"),
+).rstrip("/")
+_EGRESS_HTTP_PATH = os.environ.get(
+    "EGRESS_HTTP_PATH",
+    os.environ.get("HTTP_CALL_PATH", "/call"),
+)
+EGRESS_FTP_BASE = os.environ.get("EGRESS_FTP_URL", "http://localhost:8084").rstrip("/")
+EGRESS_SSH_BASE = os.environ.get("EGRESS_SSH_URL", "http://localhost:8085").rstrip("/")
 REQUEST_TIMEOUT = float(os.environ.get("ORCH_TIMEOUT_SECONDS", "120"))
 
 # Optioneel: vereist Authorization: Bearer <token> voor POST /invoke/scheduled (CronJob / interne caller).
@@ -112,15 +119,20 @@ async def _execute(
     rid: str,
     workflow_label: str,
 ) -> PlainTextResponse:
-    xslt_url = f"{XSLT_BASE_URL}{XSLT_APPLY_PATH}"
-    http_url = f"{HTTP_CALL_BASE_URL}{HTTP_CALL_PATH}"
+    egress_http_url = f"{_EGRESS_HTTP_BASE}{_EGRESS_HTTP_PATH}"
+    egress_ftp_url = f"{EGRESS_FTP_BASE}/ftp"
+    egress_ssh_url = f"{EGRESS_SSH_BASE}/exec"
+    egress_sftp_url = f"{EGRESS_SSH_BASE}/sftp"
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             final_body, _outputs, trace = await run_workflow(
                 doc,
                 xml,
-                xslt_apply_url=xslt_url,
-                http_call_url=http_url,
+                transformers_base_url=TRANSFORMERS_BASE_URL,
+                egress_http_url=egress_http_url,
+                egress_ftp_url=egress_ftp_url,
+                egress_ssh_url=egress_ssh_url,
+                egress_sftp_url=egress_sftp_url,
                 request_id=rid,
                 httpx_client=client,
             )
@@ -142,7 +154,7 @@ async def _execute(
     )
     return PlainTextResponse(
         content=final_body,
-        media_type="application/xml; charset=utf-8",
+        media_type="text/plain; charset=utf-8",
         headers={"X-Request-ID": rid},
     )
 

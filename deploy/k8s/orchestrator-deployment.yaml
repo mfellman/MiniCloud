@@ -24,14 +24,16 @@ spec:
           image: minicloud/orchestrator:latest
           imagePullPolicy: IfNotPresent
           env:
-            - name: XSLT_URL
-              value: http://xslt:8080
-            - name: XSLT_APPLY_PATH
-              value: /apply
-            - name: HTTP_CALL_URL
-              value: http://httpcall:8080
-            - name: HTTP_CALL_PATH
+            - name: TRANSFORMERS_URL
+              value: http://transformers:8080
+            - name: EGRESS_HTTP_URL
+              value: http://egress-http:8080
+            - name: EGRESS_HTTP_PATH
               value: /call
+            - name: EGRESS_FTP_URL
+              value: http://egress-ftp:8080
+            - name: EGRESS_SSH_URL
+              value: http://egress-ssh:8080
             - name: WORKFLOWS_DIR
               value: /app/workflows
             # Optioneel: Bearer-token voor POST /invoke/scheduled (CronJob / interne caller)

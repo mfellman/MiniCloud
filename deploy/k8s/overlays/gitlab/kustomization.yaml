@@ -1,0 +1,37 @@
+# GitLab Container Registry overlay for MiniCloud.
+#
+# 1. Replace REGISTRY_PREFIX below with your GitLab registry project path, e.g.
+#    registry.gitlab.com/mycompany/minicloud
+#    (same value as CI_REGISTRY_IMAGE from GitLab CI variables).
+# 2. Optionally change "namespace" or remove it to deploy into "default".
+# 3. After apply, add imagePullSecrets to Deployments if the registry is private
+#    (see docs/deployment-kubernetes-gitlab.md section 4).
+#
+# Apply: kubectl apply -k deploy/k8s/overlays/gitlab
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: minicloud
+
+resources:
+  - ../../
+
+images:
+  - name: minicloud/gateway
+    newName: registry.gitlab.com/example-group/example-project/gateway
+    newTag: latest
+  - name: minicloud/transformers
+    newName: registry.gitlab.com/example-group/example-project/transformers
+    newTag: latest
+  - name: minicloud/orchestrator
+    newName: registry.gitlab.com/example-group/example-project/orchestrator
+    newTag: latest
+  - name: minicloud/egress-http
+    newName: registry.gitlab.com/example-group/example-project/egress-http
+    newTag: latest
+  - name: minicloud/egress-ftp
+    newName: registry.gitlab.com/example-group/example-project/egress-ftp
+    newTag: latest
+  - name: minicloud/egress-ssh
+    newName: registry.gitlab.com/example-group/example-project/egress-ssh
+    newTag: latest

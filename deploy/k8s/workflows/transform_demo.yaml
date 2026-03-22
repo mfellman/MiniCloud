@@ -1,0 +1,13 @@
+# xml → JSON (xml2json) → Liquid met JSON-context
+name: transform_demo
+invocation:
+  allow_http: true
+  allow_schedule: false
+steps:
+  - id: as_json
+    type: xml2json
+    input_from: initial
+  - id: greet
+    type: liquid
+    input_from: as_json
+    template: "Hello, {{ greeting.name }}!"
