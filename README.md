@@ -10,6 +10,7 @@ MiniCloud is a lightweight chain of microservices deployable on **Kubernetes**: 
 - **[Kubernetes (in depth)](docs/kubernetes.md)** — Kustomize, ConfigMaps, images, kind script, Ingress, updates, and security notes.
 - **[Deploy on Kubernetes (GitLab Registry)](docs/deployment-kubernetes-gitlab.md)** — full stack on a cluster with GitLab-built images, pull secrets, and the `deploy/k8s/overlays/gitlab` overlay.
 - **[GitLab (repo + CI + registry)](docs/gitlab.md)** — creating the project, Container Registry, [`.gitlab-ci.yml`](.gitlab-ci.yml), using images in Kubernetes.
+- **[Enterprise security hardening](docs/security-enterprise-hardening.md)** — checklist: identity, secrets, egress/SSRF, network, observability, supply chain, and prioritization.
 
 ---
 
@@ -504,6 +505,7 @@ curl -s -X POST http://127.0.0.1:8083/invoke/scheduled \
 
 ## Security and production
 
+- For a structured **enterprise-oriented** checklist (OAuth, secrets, SSRF, mTLS, audit logging, supply chain), see **[docs/security-enterprise-hardening.md](docs/security-enterprise-hardening.md)**.
 - Do not expose the orchestrator or egress services directly on the internet; use **Ingress only to the gateway**.
 - Consider **`HTTP_EGRESS_ALLOWED_HOSTS`** on **egress-http** to restrict outbound URLs (SSRF).
 - Use **`SCHEDULE_INVOCATION_TOKEN`** if `/invoke/scheduled` is reachable inside the cluster but not for everyone.
