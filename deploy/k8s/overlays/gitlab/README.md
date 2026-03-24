@@ -7,3 +7,5 @@ kubectl apply -k deploy/k8s/overlays/gitlab
 ```
 
 Full steps: [docs/deployment-kubernetes-gitlab.md](../../../docs/deployment-kubernetes-gitlab.md).
+
+For a **tunable rollout** from a controller machine (generated overlay + optional pull secret), see [`deploy/k8s/scripts/gitlab-deploy.sh`](../../scripts/gitlab-deploy.sh).

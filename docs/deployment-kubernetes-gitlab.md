@@ -109,6 +109,29 @@ done
 
 Alternatively, integrate a **Kustomize strategic merge** or **JSON6902 patch** in your own overlay if you prefer GitOps-only workflows.
 
+### Automated rollout script (versioned in repo)
+
+Het script [`deploy/k8s/scripts/gitlab-deploy.sh`](../deploy/k8s/scripts/gitlab-deploy.sh) kan eerst de **git-checkout bijwerken** (of **clonen** als er nog geen repo op de machine staat), genereert daarna een **tijdelijke Kustomize-overlay** (zelfde `images:` als `overlays/gitlab`) en past toe met `kubectl apply -k`.
+
+**Repository op de controller**
+
+- Staat het script **in een bestaande clone** en is `deploy/k8s` drie niveaus hoger zichtbaar, dan is `REPO_ROOT` optioneel (wordt afgeleid).
+- Anders: in `deploy-config.local.env` **`REPO_ROOT`** zetten (bijv. `/opt/minicloud`) en **`GIT_REPO_URL`** (HTTPS met token of SSH) — bij eerste run wordt daarheen **geclone** (`GIT_REF`, standaard `develop`; shallow met `GIT_CLONE_DEPTH`).
+- Bij **`TAG_MODE=latest`** is standaard **`UPDATE_GIT_BEFORE_DEPLOY=auto`** → vóór deploy wordt **`git fetch` / `checkout` / `pull --ff-only`** op `GIT_REF` uitgevoerd zodat manifests (workflows, k8s) gelijk lopen met wat je uitrolt; images blijven `:latest` uit de registry.
+
+1. Kopieer de voorbeeldconfig en vul in (bestand staat **niet** in git):
+   ```bash
+   cp deploy/k8s/scripts/deploy-config.example.env deploy/k8s/scripts/deploy-config.local.env
+   ```
+2. Minimaal `REGISTRY_PREFIX`; op kale machine ook `REPO_ROOT` + `GIT_REPO_URL`; registry-credentials voor pull secret indien privé.
+3. **Tag**: `latest`, `explicit` + `EXPLICIT_TAG`, of `git_short` (HEAD na git-sync moet in de registry bestaan als CI-tag).
+4. Uitvoeren (pad naar script mag vanuit overal als `REPO_ROOT` / clone klopt):
+   ```bash
+   ./deploy/k8s/scripts/gitlab-deploy.sh
+   ```
+
+Opties: `UPDATE_GIT_BEFORE_DEPLOY=true/false/auto`, `DRY_RUN=true`, `PRINT_ONLY=true`, pull secret en deployment-patches zoals in het example-bestand.
+
 ---
 
 ## 5. Workflows ConfigMap
