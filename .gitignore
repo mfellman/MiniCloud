@@ -27,3 +27,6 @@ htmlcov/
 
 # Docker (optioneel lokale export)
 *.tar
+
+# Lokale Kubernetes deploy-config (geheimen); zie deploy/k8s/scripts/deploy-config.example.env
+deploy/k8s/scripts/deploy-config.local.env
