@@ -34,6 +34,7 @@ declare -A SERVICES=(
   [egress-http]="services/egressServices/http"
   [egress-ftp]="services/egressServices/ftp"
   [egress-ssh]="services/egressServices/ssh"
+  [dashboard]="services/dashboard"
 )
 
 build_push() {
@@ -47,10 +48,16 @@ build_push() {
   fi
 
   echo "=== Build: $image ==="
-  docker build -t "$image" "$context"
+  if ! docker build -t "$image" "$context"; then
+    echo "FOUT: docker build mislukt voor $name" >&2
+    return 1
+  fi
 
   echo "=== Push:  $image ==="
-  docker push "$image"
+  if ! docker push "$image"; then
+    echo "FOUT: docker push mislukt voor $name" >&2
+    return 1
+  fi
 
   echo "--- $name OK ---"
   echo
@@ -59,7 +66,7 @@ build_push() {
 # Optioneel: alleen bepaalde services bouwen (argumenten)
 TARGETS=("$@")
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  TARGETS=("gateway" "orchestrator" "transformers" "egress-http" "egress-ftp" "egress-ssh")
+  TARGETS=("gateway" "orchestrator" "transformers" "egress-http" "egress-ftp" "egress-ssh" "dashboard")
 fi
 
 FAILED=()
