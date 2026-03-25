@@ -18,127 +18,195 @@ async function apiText(path) {
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-let currentView = null;   // { type: "workflow"|"run", id: string }
-let selectedStep = null;  // step id for detail panel
-let currentTrace = null;  // full trace object when viewing a run
+let allWorkflows = [];          // [{name, group, invocation, step_count, step_types}]
+let currentWorkflow = null;     // full workflow detail (with steps)
+let currentWorkflowName = null; // selected workflow name
+let currentTrace = null;        // full trace when viewing a run
+let currentRunId = null;
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
   await loadWorkflows();
-  await loadRuns();
   document.getElementById("connStatus").textContent = "Connected";
   document.getElementById("connStatus").classList.add("ok");
 
-  document.getElementById("refreshRuns").addEventListener("click", loadRuns);
+  document.getElementById("btnViewDesign").addEventListener("click", showDesignOverlay);
+  document.getElementById("btnRefreshRuns").addEventListener("click", () => loadRunsForWorkflow(currentWorkflowName));
   document.getElementById("detailClose").addEventListener("click", closeDetail);
 
-  // Tab switching in detail panel
   document.querySelectorAll(".detail-tabs .tab").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
-
-  // Auto-refresh runs every 10 s
-  setInterval(loadRuns, 10000);
 });
 
 // ---------------------------------------------------------------------------
-// Sidebar: Workflows
+// Sidebar: grouped workflow tree
 // ---------------------------------------------------------------------------
 async function loadWorkflows() {
   try {
     const data = await api("/api/workflows");
-    const ul = document.getElementById("workflowList");
-    ul.innerHTML = "";
-    (data.workflows || []).forEach(w => {
-      const li = document.createElement("li");
-      li.textContent = w.name;
-      li.dataset.name = w.name;
-      li.addEventListener("click", () => selectWorkflow(w.name));
-      ul.appendChild(li);
-    });
+    allWorkflows = data.workflows || [];
+    renderWorkflowTree(allWorkflows);
   } catch (e) {
     console.error("loadWorkflows", e);
   }
 }
 
+function renderWorkflowTree(workflows) {
+  const tree = document.getElementById("workflowTree");
+  tree.innerHTML = "";
+
+  // Group by group name
+  const groups = {};
+  for (const w of workflows) {
+    const g = w.group || "General";
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(w);
+  }
+
+  const sortedGroups = Object.keys(groups).sort();
+  for (const groupName of sortedGroups) {
+    const items = groups[groupName];
+
+    // Group header
+    const header = document.createElement("li");
+    header.className = "group-header";
+    header.innerHTML = `<span class="chevron open">&#9656;</span> ${esc(groupName)} <span class="group-count">${items.length}</span>`;
+
+    // Group items container
+    const itemList = document.createElement("ul");
+    itemList.className = "group-items";
+
+    for (const w of items) {
+      const li = document.createElement("li");
+      li.className = "wf-item";
+      li.dataset.name = w.name;
+      li.innerHTML = `<span class="wf-icon">&#9679;</span> ${esc(w.name)}`;
+      li.addEventListener("click", () => selectWorkflow(w.name));
+      itemList.appendChild(li);
+    }
+
+    // Toggle collapse
+    header.addEventListener("click", () => {
+      itemList.classList.toggle("collapsed");
+      const chev = header.querySelector(".chevron");
+      chev.classList.toggle("open");
+    });
+
+    tree.appendChild(header);
+    tree.appendChild(itemList);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workflow detail view
+// ---------------------------------------------------------------------------
 async function selectWorkflow(name) {
-  currentView = { type: "workflow", id: name };
-  highlightSidebar("workflowList", name);
-  clearSidebarHighlight("runList");
+  currentWorkflowName = name;
+  currentRunId = null;
+  currentTrace = null;
   closeDetail();
+  highlightSidebar(name);
+  setBreadcrumb([{ label: name }]);
+
+  show("workflowPanel"); hide("runPanel"); hide("placeholder");
 
   try {
     const wf = await api(`/api/workflows/${encodeURIComponent(name)}`);
-    showWorkflowPanel(wf);
+    currentWorkflow = wf;
+    renderWorkflowDetail(wf);
   } catch (e) {
     console.error("selectWorkflow", e);
   }
+
+  await loadRunsForWorkflow(name);
 }
 
-function showWorkflowPanel(wf) {
-  hide("placeholder"); hide("runPanel"); show("workflowPanel");
+function renderWorkflowDetail(wf) {
   document.getElementById("wfTitle").textContent = wf.name;
+  document.getElementById("wfGroupLabel").textContent = `Group: ${wf.group || "General"}`;
 
-  const invParts = [];
-  if (wf.invocation.allow_http) invParts.push("HTTP");
-  if (wf.invocation.allow_schedule) invParts.push("Schedule");
-  document.getElementById("wfInvocation").textContent = invParts.join(" + ") || "None";
+  // Stat cards
+  const trigger = [];
+  if (wf.invocation.allow_http) trigger.push("HTTP");
+  if (wf.invocation.allow_schedule) trigger.push("Schedule");
 
-  const container = document.getElementById("wfGraph");
-  container.innerHTML = "";
-  container.appendChild(buildPipeline(wf.steps, null));
+  const statsEl = document.getElementById("wfStats");
+  statsEl.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Steps</div>
+      <div class="stat-value">${wf.step_count || wf.steps.length}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Trigger</div>
+      <div class="stat-value" style="font-size:16px">${trigger.join(" + ") || "None"}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Step Types</div>
+      <div class="stat-value" style="font-size:14px">${(wf.step_types || []).join(", ") || "-"}</div>
+    </div>`;
 }
 
-// ---------------------------------------------------------------------------
-// Sidebar: Runs
-// ---------------------------------------------------------------------------
-async function loadRuns() {
+async function loadRunsForWorkflow(name) {
+  if (!name) return;
+  const tbody = document.getElementById("runTableBody");
+  tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);text-align:center;padding:24px">Loading&#8230;</td></tr>`;
+
   try {
-    const data = await api("/api/traces?limit=50");
-    const ul = document.getElementById("runList");
-    ul.innerHTML = "";
-    (data.traces || []).forEach(t => {
-      const li = document.createElement("li");
-      li.classList.add("run-item");
-      li.dataset.id = t.request_id;
+    const data = await api(`/api/traces?workflow=${encodeURIComponent(name)}&limit=50`);
+    const runs = data.traces || [];
+    tbody.innerHTML = "";
 
-      const statusClass = t.status === "succeeded" ? "dot-ok"
-        : t.status === "failed" ? "dot-failed" : "dot-running";
+    if (runs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);text-align:center;padding:24px">No runs yet</td></tr>`;
+      return;
+    }
 
-      li.innerHTML = `
-        <span class="run-name"><span class="dot ${statusClass}"></span> ${esc(t.workflow)}</span>
-        <span class="run-meta">
-          <span>${formatTime(t.started_at)}</span>
-          <span>${formatDuration(t.duration_ms)}</span>
-        </span>`;
-      li.addEventListener("click", () => selectRun(t.request_id));
-      ul.appendChild(li);
-    });
+    for (const run of runs) {
+      const tr = document.createElement("tr");
+      const statusCls = run.status === "succeeded" ? "badge-green"
+        : run.status === "failed" ? "badge-red" : "badge-orange";
+
+      tr.innerHTML = `
+        <td><span class="badge ${statusCls}">${esc(run.status)}</span></td>
+        <td style="font-family:var(--mono);font-size:12px">${esc(shortId(run.request_id))}</td>
+        <td>${formatTime(run.started_at)}</td>
+        <td>${formatDuration(run.duration_ms)}</td>
+        <td style="color:var(--accent);font-size:12px">View &rarr;</td>`;
+      tr.addEventListener("click", () => selectRun(run.request_id, name));
+      tbody.appendChild(tr);
+    }
   } catch (e) {
-    console.error("loadRuns", e);
+    console.error("loadRunsForWorkflow", e);
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red);text-align:center;padding:24px">Failed to load runs</td></tr>`;
   }
 }
 
-async function selectRun(requestId) {
-  currentView = { type: "run", id: requestId };
-  highlightSidebar("runList", requestId);
-  clearSidebarHighlight("workflowList");
+// ---------------------------------------------------------------------------
+// Run detail view
+// ---------------------------------------------------------------------------
+async function selectRun(requestId, workflowName) {
+  currentRunId = requestId;
   closeDetail();
+  setBreadcrumb([
+    { label: workflowName || "Workflow", action: () => selectWorkflow(workflowName) },
+    { label: shortId(requestId) },
+  ]);
+
+  hide("placeholder"); hide("workflowPanel"); show("runPanel");
 
   try {
     const trace = await api(`/api/traces/${encodeURIComponent(requestId)}`);
     currentTrace = trace;
-    showRunPanel(trace);
+    renderRunDetail(trace);
   } catch (e) {
     console.error("selectRun", e);
   }
 }
 
-function showRunPanel(trace) {
-  hide("placeholder"); hide("workflowPanel"); show("runPanel");
-
+function renderRunDetail(trace) {
   document.getElementById("runTitle").textContent = trace.workflow;
 
   const badge = document.getElementById("runStatus");
@@ -146,27 +214,61 @@ function showRunPanel(trace) {
   badge.className = "badge " + (trace.status === "succeeded" ? "badge-green"
     : trace.status === "failed" ? "badge-red" : "badge-orange");
 
-  document.getElementById("runMeta").textContent =
-    `${formatTime(trace.started_at)}  ·  ${formatDuration(trace.duration_ms)}`;
+  document.getElementById("runMeta").innerHTML =
+    `<span>${formatTime(trace.started_at)}</span>` +
+    `<span>${formatDuration(trace.duration_ms)}</span>` +
+    `<span style="font-family:var(--mono);font-size:12px">${esc(trace.request_id)}</span>`;
+
+  const errorEl = document.getElementById("runError");
+  if (trace.error) {
+    errorEl.textContent = trace.error;
+    errorEl.classList.remove("hidden");
+  } else {
+    errorEl.classList.add("hidden");
+  }
 
   const container = document.getElementById("runGraph");
   container.innerHTML = "";
 
-  // Use workflow_definition from trace if available, else fall back to trace steps
   const steps = trace.workflow_definition || trace.steps;
   const stepTraces = buildStepTraceMap(trace.steps || []);
   container.appendChild(buildPipeline(steps, stepTraces));
 }
 
-// ---------------------------------------------------------------------------
-// Build step-trace lookup: step_id → trace entry
-// ---------------------------------------------------------------------------
 function buildStepTraceMap(traceSteps) {
   const map = {};
   for (const s of traceSteps) {
     if (s.step) map[s.step] = s;
   }
   return map;
+}
+
+// ---------------------------------------------------------------------------
+// Workflow design overlay
+// ---------------------------------------------------------------------------
+function showDesignOverlay() {
+  if (!currentWorkflow) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "design-overlay";
+  overlay.innerHTML = `
+    <div class="design-modal">
+      <div class="design-modal-header">
+        <h3>Workflow Design: ${esc(currentWorkflow.name)}</h3>
+        <button class="btn-close" id="designClose">&times;</button>
+      </div>
+      <div class="design-modal-body" id="designBody"></div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  const body = overlay.querySelector("#designBody");
+  body.appendChild(buildPipeline(currentWorkflow.steps, null));
+
+  overlay.querySelector("#designClose").addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -221,18 +323,16 @@ function buildStepNode(step, stepTraces) {
     </div>
     ${durText ? `<span class="node-duration">${durText}</span>` : ""}`;
 
-  // When clause indicator
   if (step.when) {
     const whenEl = document.createElement("div");
     whenEl.style.cssText = "font-size:11px;color:var(--orange);margin-top:4px";
     const cond = step.when.equals != null ? `== "${step.when.equals}"`
       : step.when.not_equals != null ? `!= "${step.when.not_equals}"`
-      : `in [${step.when.one_of.join(", ")}]`;
+      : step.when.one_of ? `in [${step.when.one_of.join(", ")}]` : "";
     whenEl.textContent = `when ${step.when.context_key} ${cond}`;
     node.appendChild(whenEl);
   }
 
-  // Click handler for detail
   node.addEventListener("click", (e) => {
     e.stopPropagation();
     selectStepNode(step, trace, node);
@@ -247,9 +347,9 @@ function buildLoopNode(step, stepTraces) {
   wrap.className = "pipe-loop";
 
   const label = step.type === "for_each"
-    ? `for_each — ${step.id} (as ${step.as_key || "item"})`
-    : `repeat_until — ${step.id}`;
-  const iters = trace ? ` · ${trace.iterations || "?"} iterations` : "";
+    ? `for_each \u2014 ${step.id} (as ${step.as_key || "item"})`
+    : `repeat_until \u2014 ${step.id}`;
+  const iters = trace ? ` \u00b7 ${trace.iterations || "?"} iterations` : "";
 
   wrap.innerHTML = `<div class="loop-header">
     <svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M5.22 14.78a.75.75 0 001.06-1.06L4.56 12h8.69a.75.75 0 000-1.5H4.56l1.72-1.72a.75.75 0 00-1.06-1.06l-3 3a.75.75 0 000 1.06l3 3zm5.56-6.5a.75.75 0 11-1.06-1.06L11.44 5.5H2.75a.75.75 0 010-1.5h8.69L9.72 2.28a.75.75 0 011.06-1.06l3 3a.75.75 0 010 1.06l-3 3z"/></svg>
@@ -263,7 +363,6 @@ function buildLoopNode(step, stepTraces) {
   }
   wrap.appendChild(body);
 
-  // Click on the loop header for detail
   wrap.querySelector(".loop-header").addEventListener("click", (e) => {
     e.stopPropagation();
     selectStepNode(step, trace, wrap);
@@ -276,20 +375,16 @@ function buildLoopNode(step, stepTraces) {
 // Step detail panel
 // ---------------------------------------------------------------------------
 function selectStepNode(step, trace, nodeEl) {
-  // Deselect previous
   document.querySelectorAll(".pipe-node.selected").forEach(n => n.classList.remove("selected"));
   if (nodeEl.classList.contains("pipe-node")) nodeEl.classList.add("selected");
 
-  selectedStep = step.id;
   show("detailPanel");
   document.getElementById("detailTitle").textContent = `${step.id} (${step.type})`;
 
-  // Meta tab — show step definition + trace metadata
   const metaObj = { ...step };
   if (trace) metaObj._trace = trace;
   document.getElementById("detailMeta").textContent = JSON.stringify(metaObj, null, 2);
 
-  // Input/Output — try to load from trace API if we have a current trace/run
   if (currentTrace && trace) {
     loadStepIO(currentTrace.request_id, step.id, trace);
   } else {
@@ -304,7 +399,6 @@ async function loadStepIO(requestId, stepId, trace) {
   const inputEl = document.getElementById("detailInput");
   const outputEl = document.getElementById("detailOutput");
 
-  // Try full data first, fall back to preview
   try {
     inputEl.textContent = await apiText(
       `/api/traces/${encodeURIComponent(requestId)}/steps/${encodeURIComponent(stepId)}/input`
@@ -325,7 +419,6 @@ async function loadStepIO(requestId, stepId, trace) {
 function closeDetail() {
   hide("detailPanel");
   document.querySelectorAll(".pipe-node.selected").forEach(n => n.classList.remove("selected"));
-  selectedStep = null;
 }
 
 function switchTab(tab) {
@@ -336,20 +429,59 @@ function switchTab(tab) {
 }
 
 // ---------------------------------------------------------------------------
+// Breadcrumb navigation
+// ---------------------------------------------------------------------------
+function setBreadcrumb(parts) {
+  const bc = document.getElementById("breadcrumb");
+  bc.innerHTML = "";
+
+  const home = document.createElement("a");
+  home.textContent = "Workflows";
+  home.addEventListener("click", () => {
+    currentWorkflowName = null;
+    currentRunId = null;
+    currentTrace = null;
+    closeDetail();
+    clearSidebarHighlight();
+    show("placeholder"); hide("workflowPanel"); hide("runPanel");
+    setBreadcrumb([]);
+  });
+  bc.appendChild(home);
+
+  for (let i = 0; i < parts.length; i++) {
+    const sep = document.createElement("span");
+    sep.className = "sep";
+    sep.textContent = "/";
+    bc.appendChild(sep);
+
+    const isLast = i === parts.length - 1;
+    if (isLast) {
+      const span = document.createElement("span");
+      span.className = "current";
+      span.textContent = parts[i].label;
+      bc.appendChild(span);
+    } else {
+      const a = document.createElement("a");
+      a.textContent = parts[i].label;
+      if (parts[i].action) a.addEventListener("click", parts[i].action);
+      bc.appendChild(a);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 function show(id) { document.getElementById(id).classList.remove("hidden"); }
 function hide(id) { document.getElementById(id).classList.add("hidden"); }
 
-function highlightSidebar(listId, key) {
-  const ul = document.getElementById(listId);
-  ul.querySelectorAll("li").forEach(li => {
-    const match = (li.dataset.name === key || li.dataset.id === key);
-    li.classList.toggle("active", match);
+function highlightSidebar(name) {
+  document.querySelectorAll(".wf-item").forEach(li => {
+    li.classList.toggle("active", li.dataset.name === name);
   });
 }
-function clearSidebarHighlight(listId) {
-  document.getElementById(listId).querySelectorAll("li").forEach(li => li.classList.remove("active"));
+function clearSidebarHighlight() {
+  document.querySelectorAll(".wf-item").forEach(li => li.classList.remove("active"));
 }
 
 function esc(s) {
@@ -357,6 +489,11 @@ function esc(s) {
   const el = document.createElement("span");
   el.textContent = String(s);
   return el.innerHTML;
+}
+
+function shortId(id) {
+  if (!id) return "";
+  return id.length > 12 ? id.substring(0, 8) + "\u2026" : id;
 }
 
 function formatTime(iso) {

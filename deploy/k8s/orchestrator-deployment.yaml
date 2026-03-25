@@ -47,8 +47,6 @@ spec:
             - name: CONNECTIONS_DIR
               value: /app/connections
             # Trace opslag (persistent workflow run history)
-            - name: TRACES_ENABLED
-              value: "true"
             - name: TRACES_DIR
               value: /app/traces
             - name: TRACES_MAX_RUNS

@@ -65,8 +65,14 @@ async def get_workflow(name: str) -> dict:
 
 
 @app.get("/api/traces")
-async def list_traces(limit: int = Query(default=50, ge=1, le=500)) -> dict:
-    return await _proxy_get("/api/traces", params={"limit": limit})
+async def list_traces(
+    limit: int = Query(default=50, ge=1, le=500),
+    workflow: str | None = Query(default=None),
+) -> dict:
+    params: dict = {"limit": limit}
+    if workflow:
+        params["workflow"] = workflow
+    return await _proxy_get("/api/traces", params=params)
 
 
 @app.get("/api/traces/{request_id}")

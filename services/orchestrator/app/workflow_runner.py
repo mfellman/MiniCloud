@@ -472,6 +472,7 @@ class InvocationConfig(BaseModel):
 
 class WorkflowDoc(BaseModel):
     name: str
+    group: str = Field(default="General", description="Organisatorische groep voor het dashboard")
     invocation: InvocationConfig = Field(default_factory=InvocationConfig)
     steps: list[WorkflowStep]
 
@@ -645,7 +646,7 @@ async def run_workflow(
     previous = initial_xml
     trace: list[dict[str, Any]] = []
     conn_reg: dict[str, Any] = connections if connections is not None else {}
-    _rt = run_trace  # RunTrace | NullRunTrace | None
+    _rt = run_trace  # RunTrace | None
 
     _enforce_workflow_invocation(granted_scopes, doc.name)
 

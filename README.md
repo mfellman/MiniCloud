@@ -497,8 +497,7 @@ The dashboard reads trace data from the orchestrator. To enable tracing, set the
 
 | Variable | Default | Meaning |
 |----------|---------|--------|
-| `TRACES_ENABLED` | `false` | Set to `true` to enable persistent trace storage. |
-| `TRACES_DIR` | `/app/traces` | Directory where trace data is written. |
+| `TRACES_DIR` | `/app/traces` | Directory where trace data is written (tracing is always enabled). |
 | `TRACES_MAX_RUNS` | `200` | Maximum stored runs before the oldest is pruned. |
 | `TRACES_PREVIEW_LEN` | `500` | Characters of input/output inlined in trace.json (full data is always in separate files). |
 
@@ -625,7 +624,7 @@ curl -s -X POST http://127.0.0.1:8083/invoke/scheduled \
 | 404 unknown workflow | `name` in YAML does not match URL/JSON, or ConfigMap in K8s not updated. |
 | Empty workflow list | Orchestrator does not see `WORKFLOWS_DIR`, or YAML parse errors (check orchestrator logs). |
 | Step timeouts | Raise `ORCH_TIMEOUT_SECONDS` / step timeouts; check network to external URLs. |
-| Dashboard shows no runs | `TRACES_ENABLED` is not set to `true` on the orchestrator; or no workflows have been executed yet. |
+| Dashboard shows no runs | No workflows have been executed yet; or `TRACES_DIR` is not writable. |
 | Dashboard shows "Connecting…" | The dashboard cannot reach the orchestrator; check `ORCHESTRATOR_URL` and network connectivity. |
 
 ---

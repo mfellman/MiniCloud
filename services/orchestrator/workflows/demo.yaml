@@ -2,6 +2,7 @@
 # Pas `url` aan naar jouw endpoint. `body_from` verwijst naar output van stap `to_echo`.
 # Gateway: POST /v1/run/demo  met body {"xml":"..."}  (HTTP-entry)
 name: demo
+group: Demo
 invocation:
   allow_http: true
   allow_schedule: false

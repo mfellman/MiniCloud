@@ -1,5 +1,6 @@
 # Alleen voor geplande / interne aanroep (POST /invoke/scheduled), niet via HTTP URL of POST /run.
 name: schedule_only_demo
+group: Scheduling
 invocation:
   allow_http: false
   allow_schedule: true

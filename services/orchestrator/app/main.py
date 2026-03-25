@@ -128,7 +128,13 @@ def readyz() -> dict:
 def list_workflows() -> dict:
     return {
         "workflows": [
-            {"name": n, "invocation": doc.invocation.model_dump()}
+            {
+                "name": n,
+                "group": doc.group,
+                "invocation": doc.invocation.model_dump(),
+                "step_count": len(doc.steps),
+                "step_types": sorted({getattr(s, "type", "unknown") for s in doc.steps}),
+            }
             for n, doc in sorted(_WORKFLOWS.items())
         ]
     }
@@ -303,14 +309,17 @@ def get_workflow_detail(workflow_name: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Unknown workflow: {workflow_name!r}")
     return {
         "name": doc.name,
+        "group": doc.group,
         "invocation": doc.invocation.model_dump(),
+        "step_count": len(doc.steps),
+        "step_types": sorted({getattr(s, "type", "unknown") for s in doc.steps}),
         "steps": [s.model_dump(mode="json") for s in doc.steps],
     }
 
 
 @app.get("/api/traces")
-def api_list_traces(limit: int = 50) -> dict:
-    return {"traces": list_traces(limit=min(limit, 500))}
+def api_list_traces(limit: int = 50, workflow: str | None = None) -> dict:
+    return {"traces": list_traces(limit=min(limit, 500), workflow=workflow)}
 
 
 @app.get("/api/traces/{request_id}")

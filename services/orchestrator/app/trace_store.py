@@ -16,7 +16,6 @@ Directory layout::
 
 Environment:
     TRACES_DIR          — base directory (default /app/traces)
-    TRACES_ENABLED      — "true" to enable (default "false")
     TRACES_MAX_RUNS     — max stored runs before oldest is pruned (default 200)
     TRACES_PREVIEW_LEN  — chars of input/output inlined in trace.json (default 500)
 """
@@ -34,7 +33,6 @@ from typing import Any
 LOG = logging.getLogger("trace_store")
 
 TRACES_DIR = Path(os.environ.get("TRACES_DIR", "/app/traces"))
-TRACES_ENABLED = os.environ.get("TRACES_ENABLED", "false").lower() in ("true", "1", "yes")
 TRACES_MAX_RUNS = int(os.environ.get("TRACES_MAX_RUNS", "200"))
 TRACES_PREVIEW_LEN = int(os.environ.get("TRACES_PREVIEW_LEN", "500"))
 
@@ -245,85 +243,14 @@ class RunTrace:
         return doc
 
 
-class NullStepTrace:
-    """No-op step trace when tracing is disabled."""
-
-    def record_input(self, text: str) -> None:
-        pass
-
-    def record_output(self, text: str) -> None:
-        pass
-
-    def record_context_snapshot(self, ctx: dict[str, str]) -> None:
-        pass
-
-    def finish(self, **kwargs: Any) -> dict[str, Any]:
-        return {}
-
-
-class NullLoopTrace:
-    """No-op loop trace."""
-
-    def begin_iteration(self, index: int) -> NullIterationTrace:
-        return NullIterationTrace()
-
-    def add_iteration(self, it: dict[str, Any]) -> None:
-        pass
-
-    def finish(self, **kwargs: Any) -> dict[str, Any]:
-        return {}
-
-
-class NullIterationTrace:
-    """No-op iteration trace."""
-
-    @property
-    def path_prefix(self) -> str:
-        return ""
-
-    def step(self, step_id: str, step_type: str) -> NullStepTrace:
-        return NullStepTrace()
-
-    def loop(self, step_id: str, step_type: str) -> NullLoopTrace:
-        return NullLoopTrace()
-
-    def add_step(self, entry: dict[str, Any]) -> None:
-        pass
-
-    def finish(self, **kwargs: Any) -> dict[str, Any]:
-        return {}
-
-
-class NullRunTrace:
-    """No-op run trace when tracing is disabled."""
-
-    @property
-    def run_dir(self) -> Path:
-        return Path("/dev/null")
-
-    def step(self, step_id: str, step_type: str) -> NullStepTrace:
-        return NullStepTrace()
-
-    def loop(self, step_id: str, step_type: str) -> NullLoopTrace:
-        return NullLoopTrace()
-
-    def add_step(self, entry: dict[str, Any]) -> None:
-        pass
-
-    def finish(self, **kwargs: Any) -> dict[str, Any]:
-        return {}
-
-
 def begin_run_trace(request_id: str, workflow_name: str,
-                    workflow_definition: list[dict[str, Any]] | None = None) -> RunTrace | NullRunTrace:
-    if not TRACES_ENABLED:
-        return NullRunTrace()
+                    workflow_definition: list[dict[str, Any]] | None = None) -> RunTrace:
     return RunTrace(request_id, workflow_name, workflow_definition=workflow_definition)
 
 
 # --- Query / listing ---
 
-def list_traces(limit: int = 50) -> list[dict[str, Any]]:
+def list_traces(limit: int = 50, workflow: str | None = None) -> list[dict[str, Any]]:
     """List recent traces (newest first), reading only the top-level metadata."""
     if not TRACES_DIR.is_dir():
         return []
@@ -334,15 +261,20 @@ def list_traces(limit: int = 50) -> list[dict[str, Any]]:
             runs.append((trace_json.stat().st_mtime, p))
     runs.sort(key=lambda x: x[0], reverse=True)
     result = []
-    for _, run_dir in runs[:limit]:
+    for _, run_dir in runs:
+        if len(result) >= limit:
+            break
         try:
             doc = json.loads((run_dir / "trace.json").read_text(encoding="utf-8"))
+            if workflow and doc.get("workflow") != workflow:
+                continue
             result.append({
                 "request_id": doc.get("request_id"),
                 "workflow": doc.get("workflow"),
                 "status": doc.get("status"),
                 "started_at": doc.get("started_at"),
                 "duration_ms": doc.get("duration_ms"),
+                "error": doc.get("error"),
             })
         except Exception:
             continue

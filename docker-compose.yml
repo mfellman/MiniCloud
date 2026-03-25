@@ -45,7 +45,6 @@ services:
       EGRESS_SSH_URL: http://egress-ssh:8080
       WORKFLOWS_DIR: /app/workflows
       CONNECTIONS_DIR: /app/connections
-      TRACES_ENABLED: "true"
       TRACES_DIR: /app/traces
     volumes:
       - ./services/orchestrator/workflows:/app/workflows:ro

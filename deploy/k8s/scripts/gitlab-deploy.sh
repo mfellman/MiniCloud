@@ -45,6 +45,7 @@ fi
 : "${PATCH_DEPLOYMENTS_PULL_SECRET:=true}"
 : "${DRY_RUN:=false}"
 : "${PRINT_ONLY:=false}"
+: "${BUILD_AFTER_SYNC:=true}"
 
 # auto: bij TAG_MODE=latest eerst repo bijwerken (aanbevolen op controller)
 UPDATE_GIT_BEFORE_DEPLOY="${UPDATE_GIT_BEFORE_DEPLOY:-auto}"
@@ -99,6 +100,17 @@ sync_git_repo() {
 }
 
 sync_git_repo
+
+# --- Docker build + push (standaard na elke sync/checkout) ----------------
+if [[ "$BUILD_AFTER_SYNC" == "true" ]]; then
+  echo "Docker images bouwen en pushen..."
+  if ! bash "$SCRIPT_DIR/build-and-push.sh"; then
+    echo "FOUT: build-and-push.sh mislukt — deploy wordt afgebroken." >&2
+    exit 1
+  fi
+else
+  echo "BUILD_AFTER_SYNC=false — images worden niet opnieuw gebouwd."
+fi
 
 resolve_tag() {
   case "$TAG_MODE" in

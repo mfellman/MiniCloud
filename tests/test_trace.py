@@ -1,4 +1,4 @@
-"""Tests for trace_store and trace integration in workflow runs."""
+﻿"""Tests for trace_store and trace integration in workflow runs."""
 from __future__ import annotations
 
 import json
@@ -11,14 +11,13 @@ import pytest
 from tests.conftest import REPO_ROOT, load_fastapi_app, load_workflow_runner_standalone
 
 
-def _load_trace_store(traces_dir: str, enabled: bool = True):
+def _load_trace_store(traces_dir: str):
     """Load trace_store module with overridden env vars."""
     import importlib
     import importlib.util
 
     # Set env BEFORE loading the module
     os.environ["TRACES_DIR"] = traces_dir
-    os.environ["TRACES_ENABLED"] = "true" if enabled else "false"
     os.environ["TRACES_MAX_RUNS"] = "10"
     os.environ["TRACES_PREVIEW_LEN"] = "100"
 
@@ -33,24 +32,19 @@ def _load_trace_store(traces_dir: str, enabled: bool = True):
 class TestTraceStoreUnit:
     """Unit tests for trace_store module."""
 
-    def test_begin_run_trace_disabled(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=False)
-        rt = ts.begin_run_trace("req-1", "wf-1")
-        assert type(rt).__name__ == "NullRunTrace"
-
-    def test_begin_run_trace_enabled(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+    def test_begin_run_trace_returns_run_trace(self, tmp_path):
+        ts = _load_trace_store(str(tmp_path))
         rt = ts.begin_run_trace("req-1", "wf-1")
         assert type(rt).__name__ == "RunTrace"
 
     def test_run_trace_creates_directory(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         rt = ts.begin_run_trace("req-dir-test", "wf-1")
         assert (tmp_path / "req-dir-test").is_dir()
         assert (tmp_path / "req-dir-test" / "steps").is_dir()
 
     def test_step_trace_records_input_output(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         rt = ts.begin_run_trace("req-io", "wf-1")
         st = rt.step("step1", "xslt")
         st.record_input("<xml>hello</xml>")
@@ -70,7 +64,7 @@ class TestTraceStoreUnit:
         assert out == "<xml>world</xml>"
 
     def test_run_trace_finish_writes_json(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         rt = ts.begin_run_trace("req-finish", "wf-1")
         st = rt.step("s1", "context_set")
         st.record_input("val1")
@@ -93,7 +87,7 @@ class TestTraceStoreUnit:
         assert trace_json["request_id"] == "req-finish"
 
     def test_loop_trace_with_iterations(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         rt = ts.begin_run_trace("req-loop", "wf-loop")
         lt = rt.loop("loop1", "for_each")
 
@@ -119,7 +113,7 @@ class TestTraceStoreUnit:
             assert inp_file.read_text(encoding="utf-8") == f"<item>{i}</item>"
 
     def test_list_traces(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         for i in range(3):
             rt = ts.begin_run_trace(f"req-list-{i}", f"wf-{i}")
             rt.finish(status="succeeded")
@@ -130,7 +124,7 @@ class TestTraceStoreUnit:
         assert ids == {"req-list-0", "req-list-1", "req-list-2"}
 
     def test_get_trace(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         rt = ts.begin_run_trace("req-get", "wf-get")
         rt.finish(status="succeeded")
 
@@ -139,15 +133,15 @@ class TestTraceStoreUnit:
         assert doc["request_id"] == "req-get"
 
     def test_get_trace_not_found(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         assert ts.get_trace("nonexistent") is None
 
     def test_get_trace_traversal_blocked(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         assert ts.get_trace("../etc/passwd") is None
 
     def test_get_step_data(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         rt = ts.begin_run_trace("req-sd", "wf-1")
         st = rt.step("s1", "xslt")
         st.record_input("<in/>")
@@ -160,26 +154,11 @@ class TestTraceStoreUnit:
         assert ts.get_step_data("req-sd", "s1", "other") is None
 
     def test_get_step_data_traversal_blocked(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         assert ts.get_step_data("req-1", "../../etc/passwd", "input") is None
 
-    def test_null_traces_are_noop(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=False)
-        rt = ts.begin_run_trace("null-1", "wf-null")
-
-        # All operations should succeed silently
-        st = rt.step("s1", "xslt")
-        st.record_input("data")
-        st.record_output("data")
-        st.finish(ok=True)
-        rt.add_step({})
-        rt.finish(status="succeeded")
-
-        # No files should be written
-        assert not (tmp_path / "null-1").exists()
-
     def test_prune_old_runs(self, tmp_path):
-        ts = _load_trace_store(str(tmp_path), enabled=True)
+        ts = _load_trace_store(str(tmp_path))
         # TRACES_MAX_RUNS is set to 10, create 12
         for i in range(12):
             rt = ts.begin_run_trace(f"prune-{i:03d}", "wf-prune")
@@ -196,10 +175,9 @@ async def test_trace_integration_minimal_workflow(tmp_path):
     Run the minimal workflow with tracing enabled and verify trace files are created.
     """
     os.environ["TRACES_DIR"] = str(tmp_path)
-    os.environ["TRACES_ENABLED"] = "true"
     os.environ["TRACES_PREVIEW_LEN"] = "200"
 
-    ts = _load_trace_store(str(tmp_path), enabled=True)
+    ts = _load_trace_store(str(tmp_path))
     wr = load_workflow_runner_standalone()
     workflows = wr.load_workflows(
         REPO_ROOT / "services" / "orchestrator" / "workflows",
@@ -253,12 +231,11 @@ async def test_trace_integration_minimal_workflow(tmp_path):
 @pytest.mark.asyncio
 async def test_trace_integration_transform_demo(tmp_path):
     """
-    Run transform_demo with tracing — confirms multi-step traces work.
+    Run transform_demo with tracing â€” confirms multi-step traces work.
     """
     os.environ["TRACES_DIR"] = str(tmp_path)
-    os.environ["TRACES_ENABLED"] = "true"
 
-    ts = _load_trace_store(str(tmp_path), enabled=True)
+    ts = _load_trace_store(str(tmp_path))
     wr = load_workflow_runner_standalone()
     workflows = wr.load_workflows(
         REPO_ROOT / "services" / "orchestrator" / "workflows",
@@ -295,46 +272,3 @@ async def test_trace_integration_transform_demo(tmp_path):
     for step_entry in doc_trace["steps"]:
         assert "started_at" in step_entry
         assert "duration_ms" in step_entry
-
-
-@pytest.mark.asyncio
-async def test_trace_disabled_no_files(tmp_path):
-    """
-    With tracing disabled, run_workflow should still work but no trace files should be created.
-    """
-    os.environ["TRACES_DIR"] = str(tmp_path)
-    os.environ["TRACES_ENABLED"] = "false"
-
-    ts = _load_trace_store(str(tmp_path), enabled=False)
-    wr = load_workflow_runner_standalone()
-    workflows = wr.load_workflows(
-        REPO_ROOT / "services" / "orchestrator" / "workflows",
-    )
-    doc = workflows["minimal"]
-
-    rt = ts.begin_run_trace("trace-off", "minimal")
-
-    tf_app = load_fastapi_app("transformers")
-    transport = httpx.ASGITransport(app=tf_app)
-    async with httpx.AsyncClient(
-        transport=transport,
-        base_url="http://transformers.test",
-    ) as client:
-        final, _outputs, trace, _ctx = await wr.run_workflow(
-            doc,
-            '<?xml version="1.0"?><doc><item/></doc>',
-            transformers_base_url="http://transformers.test",
-            egress_http_url="http://unused/call",
-            egress_ftp_url="http://unused/ftp",
-            egress_ssh_url="http://unused/exec",
-            egress_sftp_url="http://unused/sftp",
-            request_id="trace-off",
-            httpx_client=client,
-            run_trace=rt,
-        )
-
-    # Workflow still works
-    assert "<wrapped>" in final
-
-    # No trace directory created
-    assert not (tmp_path / "trace-off").exists()

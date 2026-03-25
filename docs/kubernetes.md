@@ -90,7 +90,15 @@ curl -s http://127.0.0.1:8080/healthz
 
 ---
 
-## 7. Network and security (guidelines)
+## 7. Persistent storage (traces)
+
+By default the orchestrator traces volume is an **`emptyDir`** — data is lost on pod restart. For production use, replace it with a **PersistentVolumeClaim** backed by a CSI storage provider such as [Longhorn](https://longhorn.io/).
+
+See **[Persistent Storage met Longhorn](persistent-storage-longhorn.md)** for a complete guide including PVC setup, sizing guidelines, and backup strategies.
+
+---
+
+## 8. Network and security (guidelines)
 
 - **Services** use **`ClusterIP`** only: orchestrator, transformers, and egress are **not** reachable from the internet unless you add an Ingress or `LoadBalancer` (do not expose them publicly).
 - Expose only the **gateway** via **Ingress** (see [`ingress.yaml`](ingress.yaml)). Clients then reach `https://your-host/...` → gateway only.
