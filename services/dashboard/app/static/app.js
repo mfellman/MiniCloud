@@ -107,11 +107,15 @@ async function selectWorkflow(name) {
   currentWorkflowName = name;
   currentRunId = null;
   currentTrace = null;
+  currentWorkflow = null;
   closeDetail();
   highlightSidebar(name);
   setBreadcrumb([{ label: name }]);
 
   show("workflowPanel"); hide("runPanel"); hide("placeholder");
+  document.getElementById("wfTitle").textContent = name;
+  document.getElementById("wfGroupLabel").textContent = "Loading\u2026";
+  document.getElementById("wfStats").innerHTML = "";
 
   try {
     const wf = await api(`/api/workflows/${encodeURIComponent(name)}`);
@@ -119,6 +123,7 @@ async function selectWorkflow(name) {
     renderWorkflowDetail(wf);
   } catch (e) {
     console.error("selectWorkflow", e);
+    document.getElementById("wfGroupLabel").textContent = "Error loading workflow";
   }
 
   await loadRunsForWorkflow(name);
@@ -247,7 +252,14 @@ function buildStepTraceMap(traceSteps) {
 // Workflow design overlay
 // ---------------------------------------------------------------------------
 function showDesignOverlay() {
-  if (!currentWorkflow) return;
+  if (!currentWorkflow) {
+    console.warn("showDesignOverlay: no workflow loaded");
+    return;
+  }
+  if (!currentWorkflow.steps || currentWorkflow.steps.length === 0) {
+    console.warn("showDesignOverlay: workflow has no steps");
+    return;
+  }
 
   const overlay = document.createElement("div");
   overlay.className = "design-overlay";

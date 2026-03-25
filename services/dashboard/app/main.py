@@ -3,6 +3,7 @@
 Proxies workflow + trace data from the orchestrator and serves the
 single-page dashboard frontend.
 """
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -21,6 +22,18 @@ REQUEST_TIMEOUT = float(os.environ.get("DASH_TIMEOUT_SECONDS", "30"))
 app = FastAPI(title="MiniCloud Dashboard", version="0.1.0")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def _asset_version() -> str:
+    """Hash of CSS+JS content — used as cache-busting query param."""
+    h = hashlib.md5(usedforsecurity=False)
+    for name in ("style.css", "app.js"):
+        p = STATIC_DIR / name
+        if p.exists():
+            h.update(p.read_bytes())
+    return h.hexdigest()[:8]
+
+_ASSET_VERSION = _asset_version()
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +106,11 @@ async def get_step_data(request_id: str, step_path: str, kind: str) -> PlainText
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = STATIC_DIR / "index.html"
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    html = html_path.read_text(encoding="utf-8")
+    # Cache-busting: append version hash to asset URLs
+    html = html.replace('href="/static/style.css"', f'href="/static/style.css?v={_ASSET_VERSION}"')
+    html = html.replace('src="/static/app.js"', f'src="/static/app.js?v={_ASSET_VERSION}"')
+    return HTMLResponse(content=html)
 
 
 # Mount static assets (CSS/JS) — keep this AFTER specific routes

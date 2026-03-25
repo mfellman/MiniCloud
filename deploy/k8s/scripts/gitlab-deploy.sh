@@ -221,4 +221,20 @@ if [[ "$PATCH_DEPLOYMENTS_PULL_SECRET" == "true" && "$DRY_RUN" != "true" ]]; the
   done
 fi
 
+# Rollout restart zodat pods altijd de nieuwste image ophalen (belangrijk bij tag=latest)
+if [[ "$DRY_RUN" != "true" && "$TAG" == "latest" ]]; then
+  echo "Rollout restart van alle deployments (tag=latest)..."
+  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
+    if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
+      kubectl rollout restart deployment/"$d" -n "$NAMESPACE"
+    fi
+  done
+  echo "Wacht op rollout..."
+  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
+    if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
+      kubectl rollout status deployment/"$d" -n "$NAMESPACE" --timeout=120s || true
+    fi
+  done
+fi
+
 echo "Klaar. Controleer: kubectl get pods -n $NAMESPACE"
