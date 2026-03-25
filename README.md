@@ -433,7 +433,29 @@ Workflows are bind-mounted from `services/orchestrator/workflows` (read-only). Y
 - **Ingress** (optional) points at the **gateway**; transformers, orchestrator, and egress services are **ClusterIP** only.
 - **`deploy/k8s/gateway-deployment.yaml`** sets e.g. `ORCHESTRATOR_URL=http://orchestrator:8080`.
 
-Apply:
+### Deploy workflow (GitLab Registry)
+
+1. **Configureer** `deploy/k8s/scripts/deploy-config.local.env` (kopieer van `deploy-config.example.env`).
+2. **Docker login** naar de registry: `docker login registry.gitlab.com`
+3. **Bouw en push** alle images:
+   ```bash
+   bash deploy/k8s/scripts/build-and-push.sh
+   ```
+   Of één specifieke service: `bash deploy/k8s/scripts/build-and-push.sh gateway`
+4. **Deploy** naar het cluster:
+   ```bash
+   bash deploy/k8s/scripts/gitlab-deploy.sh
+   ```
+
+### Security hardening (deployment manifests)
+
+Alle deployment-manifesten zijn gehardend met:
+- **Pod-level**: `runAsNonRoot: true`, `runAsUser: 10001`, `runAsGroup: 10001`, `fsGroup: 10001`
+- **Container-level**: `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities: { drop: [ALL] }`
+
+Dit komt overeen met UID 10001 (`appuser`) uit de Dockerfiles. Zie [docs/security-enterprise-hardening.md](docs/security-enterprise-hardening.md) voor de volledige checklist.
+
+### Direct apply
 
 ```bash
 kubectl apply -k deploy/k8s
