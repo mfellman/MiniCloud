@@ -11,6 +11,7 @@ MiniCloud is a lightweight chain of microservices deployable on **Kubernetes**: 
 - **[Deploy on Kubernetes (GitLab Registry)](docs/deployment-kubernetes-gitlab.md)** — full stack on a cluster with GitLab-built images, pull secrets, and the `deploy/k8s/overlays/gitlab` overlay.
 - **[GitLab (repo + CI + registry)](docs/gitlab.md)** — creating the project, Container Registry, [`.gitlab-ci.yml`](.gitlab-ci.yml), using images in Kubernetes.
 - **[Enterprise security hardening](docs/security-enterprise-hardening.md)** — checklist: identity, secrets, egress/SSRF, network, observability, supply chain, and prioritization.
+- **[Dashboard (GUI)](#dashboard-gui)** — visual workflow graphs, run history, step input/output inspection.
 
 ---
 
@@ -25,9 +26,10 @@ MiniCloud is a lightweight chain of microservices deployable on **Kubernetes**: 
 7. [Tests (pytest)](#tests-pytest)
 8. [Local run (Docker Compose)](#local-run-docker-compose)
 9. [Kubernetes](#kubernetes)
-10. [Examples (curl)](#examples-curl)
-11. [Security and production](#security-and-production)
-12. [Troubleshooting](#troubleshooting)
+10. [Dashboard (GUI)](#dashboard-gui)
+11. [Examples (curl)](#examples-curl)
+12. [Security and production](#security-and-production)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -40,10 +42,12 @@ flowchart LR
   orch[Orchestrator]
   tr[Transformers]
   ehttp[egress-http]
-  gw -->|"/v1/run, /v1/transform"| orch
+  dash[Dashboard]
+  gw -->|"/ v1/run, /v1/transform"| orch
   gw -->|direct xslt| tr
   orch -->|"/applyXSLT /xml2json ..."| tr
   orch -->|"/call"| ehttp
+  dash -->|"workflows, traces"| orch
 ```
 
 - **Clients** should talk only to the **gateway** (public endpoint).
@@ -70,6 +74,7 @@ flowchart LR
 | **egress-http** | Outbound HTTP for workflows: `POST /call`. | 8082 |
 | **egress-ftp** | Outbound FTP/FTPS: `POST /ftp`. | 8084 |
 | **egress-ssh** | Outbound SSH: `POST /exec` (command); `POST /sftp` (files over SFTP). | 8085 |
+| **dashboard** | Web GUI: visual workflow graphs, run history with status, step-level input/output inspection. | 8090 |
 
 ---
 
@@ -420,6 +425,7 @@ Host ports:
 | 8083 | orchestrator |
 | 8084 | egress-ftp |
 | 8085 | egress-ssh |
+| 8090 | dashboard (GUI) |
 
 Workflows are bind-mounted from `services/orchestrator/workflows` (read-only). YAML changes are visible after restarting the orchestrator container (or rebuild if workflows are baked into the image).
 
@@ -467,6 +473,77 @@ Without Ingress, access the gateway e.g. with:
 ```bash
 kubectl port-forward svc/gateway 8080:8080
 ```
+
+---
+
+## Dashboard (GUI)
+
+The **dashboard** is a separate service that provides a visual web interface for monitoring and inspecting workflows and their runs — similar to Azure Logic Apps or n8n.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Workflow visualisation** | Each workflow is rendered as a pipeline diagram with colour-coded step blocks per type (HTTP, XSLT, Liquid, FTP, SSH, loops, etc.). |
+| **Run history** | Lists recent workflow runs with status (succeeded / failed), timestamp, and duration. Auto-refreshes every 10 seconds. |
+| **Run graph with status** | When you select a run, the workflow graph is shown with per-step status: green border = succeeded, red = failed, grey = skipped. The exact workflow definition at execution time is stored in the trace, so historical runs remain accurate even if the workflow YAML changes later. |
+| **Step detail drill-down** | Click any step to open a side panel with three tabs: **Input** (full request/data sent to the step), **Output** (full response), and **Info** (step definition + trace metadata like duration, status, context snapshot). |
+| **Loop support** | `for_each` and `repeat_until` loops are rendered as nested containers showing iteration count and child steps. |
+| **Conditional indicators** | Steps with `when` conditions show the condition inline on the graph node. |
+
+### Enabling traces
+
+The dashboard reads trace data from the orchestrator. To enable tracing, set these environment variables on the **orchestrator**:
+
+| Variable | Default | Meaning |
+|----------|---------|--------|
+| `TRACES_ENABLED` | `false` | Set to `true` to enable persistent trace storage. |
+| `TRACES_DIR` | `/app/traces` | Directory where trace data is written. |
+| `TRACES_MAX_RUNS` | `200` | Maximum stored runs before the oldest is pruned. |
+| `TRACES_PREVIEW_LEN` | `500` | Characters of input/output inlined in trace.json (full data is always in separate files). |
+
+In Docker Compose, traces are already enabled (see `docker-compose.yml`). In Kubernetes, add these to the orchestrator Deployment env and ensure a **PersistentVolumeClaim** or **emptyDir** is mounted at `TRACES_DIR`.
+
+### Starting the dashboard
+
+**Docker Compose** (default setup):
+
+```bash
+docker compose up -d
+# Open http://localhost:8090 in your browser
+```
+
+**Kubernetes:**
+
+The dashboard is included in the Kustomize manifests (`deploy/k8s/dashboard-deployment.yaml`, `dashboard-service.yaml`). After deploying:
+
+```bash
+kubectl port-forward svc/dashboard 8090:8080
+# Open http://localhost:8090
+```
+
+Or use the Ingress rule at `/dashboard` if you have an Ingress controller configured.
+
+### Using the dashboard
+
+1. **Open** `http://localhost:8090` — you see the sidebar with all loaded workflows and recent runs.
+2. **Click a workflow name** in the left sidebar to view its pipeline graph (definition only, no run data).
+3. **Trigger a workflow** via curl or another client (see [Examples](#examples-curl)) — the run appears in the "Recent Runs" list within 10 seconds.
+4. **Click a run** to view the executed pipeline with status per step.
+5. **Click any step node** in the graph to open the detail panel on the right. Switch between the **Input**, **Output**, and **Info** tabs to inspect data.
+6. Use the **refresh button** (&#x21bb;) next to "Recent Runs" to manually reload the run list.
+
+### Dashboard environment variables
+
+| Variable | Default | Meaning |
+|----------|---------|--------|
+| `ORCHESTRATOR_URL` | `http://localhost:8083` | URL of the orchestrator service. In Docker Compose / K8s: `http://orchestrator:8080`. |
+| `DASH_TIMEOUT_SECONDS` | `30` | Timeout for API calls from dashboard to orchestrator. |
+| `LOG_LEVEL` | `INFO` | Log level. |
+
+### Architecture note
+
+The dashboard proxies all data requests through its own backend to the orchestrator, so the browser only talks to the dashboard service (no CORS issues, no direct orchestrator exposure). The orchestrator exposes read-only trace endpoints (`GET /api/traces`, `GET /api/traces/{id}`, `GET /api/traces/{id}/steps/{path}/{kind}`) and a workflow detail endpoint (`GET /workflows/{name}`).
 
 ---
 
@@ -548,6 +625,8 @@ curl -s -X POST http://127.0.0.1:8083/invoke/scheduled \
 | 404 unknown workflow | `name` in YAML does not match URL/JSON, or ConfigMap in K8s not updated. |
 | Empty workflow list | Orchestrator does not see `WORKFLOWS_DIR`, or YAML parse errors (check orchestrator logs). |
 | Step timeouts | Raise `ORCH_TIMEOUT_SECONDS` / step timeouts; check network to external URLs. |
+| Dashboard shows no runs | `TRACES_ENABLED` is not set to `true` on the orchestrator; or no workflows have been executed yet. |
+| Dashboard shows "Connecting…" | The dashboard cannot reach the orchestrator; check `ORCHESTRATOR_URL` and network connectivity. |
 
 ---
 
