@@ -328,16 +328,79 @@ Each step stores a **string** (XML or other text). Only that string is passed vi
 
 ---
 
-## 12.1 Loops, branching, and “for each item”
+## 12.1 Loop steps: `for_each` and `repeat_until`
 
-The step list stays a **flat list** (no nested YAML blocks). Each step still has one string in `outputs[id]`; **`when`** (§10.2) adds **optional skipping** — not nested subgraphs.
+The orchestrator supports two loop step types that execute **substeps** per iteration.
 
-| Need | Approach |
-|------|----------|
-| IF / CASE on values derived from XML or JSON | **`context_extract_*`** + **`when`** (`equals` / `one_of` / `not_equals`) on subsequent steps. |
-| Transform a list inside one payload, one aggregated result | **XSLT 1.0** or **Liquid** inside one step’s string. |
-| Many external calls (per item) | One **`http`** batch endpoint, or **multiple workflow invocations** from outside. |
-| Nested loops over *steps* | Still not modeled; use XSLT/Liquid, a batch HTTP service, or repeated runs. |
+### Step `type: for_each`
+
+Iterates over items in a JSON array. Each iteration runs the substeps with the current item available in a context variable.
+
+```yaml
+- type: for_each
+  id: process_items
+  input_from: previous          # JSON string containing an array
+  items_path: /items            # JSON Pointer to array (default: / = root)
+  as: item                      # context key for current item (default: "item")
+  index_as: i                   # context key for 0-based index (optional)
+  max_iterations: 100           # safety limit (default: 100, max: 10000)
+  steps:                        # substeps executed per item
+    - id: greet
+      type: liquid
+      input_from: "var:item"
+      template: "Hello {{ name }}!"
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `input_from` | no | JSON source (initial / previous / step_id / var:key). |
+| `items_path` | no | JSON Pointer to the array. Default `/` (root is the array). |
+| `as` | no | Context key for the current item (JSON string). Default `item`. |
+| `index_as` | no | Context key for the current 0-based index (string). |
+| `max_iterations` | no | Safety limit. Error if array is larger. Default 100. |
+| `steps` | yes | List of substeps (same types as top-level steps, including nested loops). |
+
+**Output**: the `for_each` step output is a **JSON array** of the final substep output per iteration.
+
+### Step `type: repeat_until`
+
+Repeats substeps until a context condition is met (polling, pagination, convergence).
+
+```yaml
+- type: repeat_until
+  id: poll
+  max_iterations: 20            # required safety limit (default: 20, max: 10000)
+  until:                        # same syntax as `when` condition
+    context_key: status
+    equals: "done"
+  steps:                        # substeps executed each iteration
+    - id: check
+      type: http
+      http:
+        url: https://api.example.com/status
+        body_from: initial
+    - id: extract
+      type: context_extract_json
+      variable: status
+      input_from: check
+      json_path: /status
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `max_iterations` | no | Safety limit. Error if condition never met. Default 20. |
+| `until` | yes | Condition checked **after** each iteration (same syntax as `when`: `context_key` + `equals` / `not_equals` / `one_of`). |
+| `steps` | yes | List of substeps per iteration. |
+
+**Output**: the output of the last substep at the iteration where the condition was met.
+
+### Nesting
+
+Both `for_each` and `repeat_until` substeps can contain any step type, including nested loops. The `when` condition works on substeps too.
+
+### Example
+
+See `services/orchestrator/workflows/loop_demo.yaml` for a complete for_each demo with xml2json + Liquid.
 
 ---
 

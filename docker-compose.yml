@@ -45,9 +45,12 @@ services:
       EGRESS_SSH_URL: http://egress-ssh:8080
       WORKFLOWS_DIR: /app/workflows
       CONNECTIONS_DIR: /app/connections
+      TRACES_ENABLED: "true"
+      TRACES_DIR: /app/traces
     volumes:
       - ./services/orchestrator/workflows:/app/workflows:ro
       - ./services/orchestrator/connections:/app/connections:ro
+      - orchestrator-traces:/app/traces
     depends_on:
       - egress-http
       - egress-ftp
@@ -73,3 +76,18 @@ services:
       - egress-http
       - egress-ftp
       - egress-ssh
+
+  dashboard:
+    build:
+      context: ./services/dashboard
+      dockerfile: Dockerfile
+    image: minicloud/dashboard:latest
+    ports:
+      - "8090:8080"
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8080
+    depends_on:
+      - orchestrator
+
+volumes:
+  orchestrator-traces:

@@ -46,6 +46,13 @@ spec:
               value: /app/workflows
             - name: CONNECTIONS_DIR
               value: /app/connections
+            # Trace opslag (persistent workflow run history)
+            - name: TRACES_ENABLED
+              value: "true"
+            - name: TRACES_DIR
+              value: /app/traces
+            - name: TRACES_MAX_RUNS
+              value: "200"
             # Optioneel: Bearer voor POST /run en POST /run/{name} (HTTP / gateway /v1/run)
             # - name: HTTP_INVOCATION_TOKEN
             #   valueFrom:
@@ -77,6 +84,8 @@ spec:
             - name: connections
               mountPath: /app/connections
               readOnly: true
+            - name: traces
+              mountPath: /app/traces
           readinessProbe:
             httpGet:
               path: /readyz
@@ -102,3 +111,5 @@ spec:
         - name: connections
           configMap:
             name: minicloud-connections
+        - name: traces
+          emptyDir: {}

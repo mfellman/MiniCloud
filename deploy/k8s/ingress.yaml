@@ -19,3 +19,10 @@ spec:
                 name: gateway
                 port:
                   number: 8080
+          - path: /dashboard
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  number: 8080

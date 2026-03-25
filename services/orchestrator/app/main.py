@@ -17,6 +17,7 @@ from app.oauth_policy import (
     bearer_scopes_from_request,
     validate_oauth_config_at_startup,
 )
+from app.trace_store import begin_run_trace, get_step_data, get_trace, list_traces
 from app.workflow_runner import WorkflowDoc, load_workflows, run_workflow
 
 LOG = logging.getLogger("orchestrator")
@@ -166,6 +167,8 @@ async def _execute(
     egress_ftp_url = f"{EGRESS_FTP_BASE}/ftp"
     egress_ssh_url = f"{EGRESS_SSH_BASE}/exec"
     egress_sftp_url = f"{EGRESS_SSH_BASE}/sftp"
+    wf_def = [s.model_dump(mode="json") for s in doc.steps]
+    rt = begin_run_trace(rid, workflow_label, workflow_definition=wf_def)
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             final_body, _outputs, trace, _ctx = await run_workflow(
@@ -180,19 +183,25 @@ async def _execute(
                 httpx_client=client,
                 granted_scopes=granted_scopes,
                 connections=_CONNECTIONS,
+                run_trace=rt,
             )
     except OAuthScopeDenied as e:
+        rt.finish(status="failed", error=str(e))
         raise HTTPException(status_code=403, detail=str(e)) from e
     except RuntimeError as e:
         LOG.warning("workflow failed request_id=%s: %s", rid, e)
+        rt.finish(status="failed", error=str(e))
         raise HTTPException(status_code=502, detail=str(e)) from e
     except httpx.TimeoutException as e:
         LOG.error("timeout request_id=%s: %s", rid, e)
+        rt.finish(status="failed", error=f"Timeout: {e}")
         raise HTTPException(status_code=504, detail="Workflow step timeout") from e
     except httpx.RequestError as e:
         LOG.error("upstream error request_id=%s: %s", rid, e)
+        rt.finish(status="failed", error=f"Upstream error: {e}")
         raise HTTPException(status_code=502, detail=f"Upstream error: {e}") from e
 
+    rt.finish(status="succeeded", final_output=final_body, context=_ctx)
     LOG.info(
         "workflow ok request_id=%s workflow=%s trace=%s",
         rid,
@@ -280,3 +289,41 @@ async def invoke_scheduled(
         workflow_label=body.workflow,
         granted_scopes=granted_scopes,
     )
+
+
+# ---------------------------------------------------------------------------
+# Trace & workflow detail API (read-only, used by MiniCloud Dashboard)
+# ---------------------------------------------------------------------------
+
+@app.get("/workflows/{workflow_name}")
+def get_workflow_detail(workflow_name: str) -> dict:
+    """Return full workflow definition with steps for visualisation."""
+    doc = _WORKFLOWS.get(workflow_name)
+    if doc is None:
+        raise HTTPException(status_code=404, detail=f"Unknown workflow: {workflow_name!r}")
+    return {
+        "name": doc.name,
+        "invocation": doc.invocation.model_dump(),
+        "steps": [s.model_dump(mode="json") for s in doc.steps],
+    }
+
+
+@app.get("/api/traces")
+def api_list_traces(limit: int = 50) -> dict:
+    return {"traces": list_traces(limit=min(limit, 500))}
+
+
+@app.get("/api/traces/{request_id}")
+def api_get_trace(request_id: str) -> dict:
+    doc = get_trace(request_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Trace not found")
+    return doc
+
+
+@app.get("/api/traces/{request_id}/steps/{step_path}/{kind}")
+def api_get_step_data(request_id: str, step_path: str, kind: str) -> PlainTextResponse:
+    data = get_step_data(request_id, step_path, kind)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Step data not found")
+    return PlainTextResponse(content=data)

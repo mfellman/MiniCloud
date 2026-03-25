@@ -226,6 +226,7 @@ The orchestrator keeps a **runtime context** map (string keys/values). Use **`co
 - `services/orchestrator/workflows/minimal.yaml` — XSLT only (good for offline tests).
 - `services/orchestrator/workflows/transform_demo.yaml` — xml2json + Liquid (`Hello, {{ greeting.name }}`).
 - `services/orchestrator/workflows/schedule_only_demo.yaml` — scheduled route only; not via HTTP trigger (see below).
+- `services/orchestrator/workflows/loop_demo.yaml` — `for_each` loop: XML → xml2json → iterate items → Liquid greeting per person.
 
 ---
 
