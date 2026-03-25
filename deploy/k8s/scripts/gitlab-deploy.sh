@@ -163,6 +163,9 @@ images:
   - name: minicloud/egress-ssh
     newName: ${REGISTRY_PREFIX}/egress-ssh
     newTag: ${TAG}
+  - name: minicloud/dashboard
+    newName: ${REGISTRY_PREFIX}/dashboard
+    newTag: ${TAG}
 EOF
 } >"$KUST"
 
@@ -198,7 +201,7 @@ fi
 kubectl apply "${APPLY_ARGS[@]}" -k "$TMP"
 
 if [[ "$PATCH_DEPLOYMENTS_PULL_SECRET" == "true" && "$DRY_RUN" != "true" ]]; then
-  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh; do
+  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
     if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
       kubectl patch deployment "$d" -n "$NAMESPACE" --type merge -p \
         "{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"${PULL_SECRET_NAME}\"}]}}}}"
