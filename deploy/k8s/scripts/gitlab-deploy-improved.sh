@@ -76,7 +76,7 @@ fi
 : "${REGISTRY_PREFIX:?Zet REGISTRY_PREFIX in deploy-config.local.env}"
 : "${NAMESPACE:=minicloud}"
 : "${TAG_MODE:=latest}"
-: "${GIT_REF:=develop}"
+: "${GIT_REF:=development}"
 : "${GIT_CLONE_DEPTH:=1}"
 : "${CREATE_PULL_SECRET:=false}"
 : "${PULL_SECRET_NAME:=gitlab-registry}"

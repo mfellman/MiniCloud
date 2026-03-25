@@ -37,7 +37,7 @@ fi
 : "${REGISTRY_PREFIX:?Zet REGISTRY_PREFIX in deploy-config.local.env}"
 : "${NAMESPACE:=minicloud}"
 : "${TAG_MODE:=latest}"
-: "${GIT_REF:=develop}"
+: "${GIT_REF:=development}"
 : "${GIT_CLONE_DEPTH:=1}"
 : "${CREATE_PULL_SECRET:=false}"
 : "${PULL_SECRET_NAME:=gitlab-registry}"
@@ -85,6 +85,11 @@ sync_git_repo() {
 
   if [[ "$UPDATE_GIT_BEFORE_DEPLOY" != "true" ]]; then
     return 0
+  fi
+
+  # Zorg dat de remote de juiste URL (met credentials) heeft
+  if [[ -n "${GIT_REPO_URL:-}" ]]; then
+    git -C "$REPO_ROOT" remote set-url origin "$GIT_REPO_URL"
   fi
 
   echo "Git bijwerken in $REPO_ROOT (branch $GIT_REF)..."
