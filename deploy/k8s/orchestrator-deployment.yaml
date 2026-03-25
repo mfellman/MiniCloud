@@ -24,7 +24,7 @@ spec:
       containers:
         - name: orchestrator
           image: minicloud/orchestrator:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

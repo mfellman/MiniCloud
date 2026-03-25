@@ -20,6 +20,7 @@ spec:
       containers:
         - name: dashboard
           image: minicloud/dashboard:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:

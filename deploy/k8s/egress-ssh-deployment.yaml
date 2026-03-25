@@ -24,7 +24,7 @@ spec:
       containers:
         - name: egress-ssh
           image: minicloud/egress-ssh:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

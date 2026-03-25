@@ -24,7 +24,7 @@ spec:
       containers:
         - name: egress-http
           image: minicloud/egress-http:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

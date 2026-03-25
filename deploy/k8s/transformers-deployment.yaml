@@ -24,7 +24,7 @@ spec:
       containers:
         - name: transformers
           image: minicloud/transformers:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

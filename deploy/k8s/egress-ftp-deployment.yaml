@@ -24,7 +24,7 @@ spec:
       containers:
         - name: egress-ftp
           image: minicloud/egress-ftp:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

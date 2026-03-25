@@ -8,6 +8,7 @@ configMapGenerator:
   - name: minicloud-workflows
     files:
       - workflows/demo.yaml
+      - workflows/loop_demo.yaml
       - workflows/minimal.yaml
       - workflows/schedule_only_demo.yaml
       - workflows/transform_demo.yaml
