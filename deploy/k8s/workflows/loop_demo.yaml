@@ -4,6 +4,22 @@ invocation:
   allow_http: true
   allow_schedule: false
 
+example_payloads:
+  - name: multi-person
+    payload:
+      xml: |
+        <items>
+          <item>Alice</item>
+          <item>Bob</item>
+          <item>Charlie</item>
+        </items>
+  - name: single-item
+    payload:
+      xml: |
+        <items>
+          <item>Eve</item>
+        </items>
+
 # Demonstratie van for_each en repeat_until.
 # Input (POST /v1/run/loop_demo):
 #   {"xml": "<items><item>Alice</item><item>Bob</item><item>Charlie</item></items>"}

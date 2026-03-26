@@ -5,6 +5,24 @@ group: Integration
 invocation:
   allow_http: true
   allow_schedule: false
+
+example_payloads:
+  - name: test-message
+    payload:
+      xml: |
+        <message>
+          <type>test</type>
+          <timestamp>2024-01-01T12:00:00Z</timestamp>
+          <content>Hello RabbitMQ</content>
+        </message>
+  - name: event-notification
+    payload:
+      xml: |
+        <event>
+          <source>system</source>
+          <severity>info</severity>
+          <description>Workflow event notification</description>
+        </event>
 steps:
   - id: publish_test_message
     type: rabbitmq_publish
