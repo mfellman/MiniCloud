@@ -4,7 +4,7 @@ name: rabbitmq_publish_demo
 group: Integration
 invocation:
   allow_http: true
-  allow_schedule: false
+  allow_schedule: true
 
 example_payloads:
   - name: test-message

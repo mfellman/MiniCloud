@@ -3,7 +3,7 @@ name: minimal
 group: General
 invocation:
   allow_http: true
-  allow_schedule: false
+  allow_schedule: true
 example_payloads:
   - name: dashboard-test-minimal
     payload:

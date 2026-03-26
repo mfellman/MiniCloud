@@ -24,6 +24,7 @@ LOG = logging.getLogger("dashboard")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "http://localhost:8083").rstrip("/")
+SCHEDULER_URL = os.environ.get("SCHEDULER_URL", "http://localhost:8089").rstrip("/")
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://localhost:8080").rstrip("/")
 GATEWAY_RUN_BEARER_TOKEN = os.environ.get("GATEWAY_RUN_BEARER_TOKEN", "").strip()
 STORAGE_SERVICE_URL = os.environ.get("STORAGE_SERVICE_URL", "http://localhost:8086").rstrip("/")
@@ -444,6 +445,73 @@ async def retrigger_run_from_dashboard(request_id: str, request: Request) -> dic
 async def iam_users(request: Request) -> Any:
     me = await _require_admin(request)
     return await _identity_request("GET", "/users", token=me["_token"])
+
+
+# ---------------------------------------------------------------------------
+# Scheduler proxy routes
+# ---------------------------------------------------------------------------
+
+async def _scheduler_proxy(method: str, path: str, *, body: Any = None, user: str = "anonymous") -> Any:
+    url = f"{SCHEDULER_URL}{path}"
+    headers = {"X-User": user}
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        if method == "GET":
+            r = await client.get(url, headers=headers)
+        elif method == "POST":
+            r = await client.post(url, json=body, headers=headers)
+        elif method == "PUT":
+            r = await client.put(url, json=body, headers=headers)
+        elif method == "DELETE":
+            r = await client.delete(url, headers=headers)
+        else:
+            raise ValueError(f"Unsupported method: {method}")
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text
+        raise HTTPException(status_code=r.status_code, detail=detail)
+    return r.json()
+
+
+@app.get("/api/scheduler/named-schedules")
+async def scheduler_list_named_schedules() -> Any:
+    return await _scheduler_proxy("GET", "/named-schedules")
+
+
+@app.post("/api/scheduler/named-schedules")
+async def scheduler_create_named_schedule(body: dict, request: Request) -> Any:
+    me = await _require_identity_user(request)
+    return await _scheduler_proxy("POST", "/named-schedules", body=body, user=me.get("username", "anonymous"))
+
+
+@app.put("/api/scheduler/named-schedules/{schedule_id}")
+async def scheduler_update_named_schedule(schedule_id: str, body: dict, request: Request) -> Any:
+    me = await _require_identity_user(request)
+    return await _scheduler_proxy("PUT", f"/named-schedules/{schedule_id}", body=body, user=me.get("username", "anonymous"))
+
+
+@app.delete("/api/scheduler/named-schedules/{schedule_id}")
+async def scheduler_delete_named_schedule(schedule_id: str, request: Request) -> Any:
+    me = await _require_identity_user(request)
+    return await _scheduler_proxy("DELETE", f"/named-schedules/{schedule_id}", user=me.get("username", "anonymous"))
+
+
+@app.get("/api/scheduler/schedules")
+async def scheduler_list_schedules() -> Any:
+    return await _scheduler_proxy("GET", "/schedules")
+
+
+@app.post("/api/scheduler/schedules")
+async def scheduler_create_schedule(body: dict, request: Request) -> Any:
+    me = await _require_identity_user(request)
+    return await _scheduler_proxy("POST", "/schedules", body=body, user=me.get("username", "anonymous"))
+
+
+@app.delete("/api/scheduler/schedules/{job_id}")
+async def scheduler_delete_schedule(job_id: str, request: Request) -> Any:
+    me = await _require_identity_user(request)
+    return await _scheduler_proxy("DELETE", f"/schedules/{job_id}", user=me.get("username", "anonymous"))
 
 
 @app.get("/api/iam/permissions")

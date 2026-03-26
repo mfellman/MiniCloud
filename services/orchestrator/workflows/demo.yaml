@@ -5,7 +5,7 @@ name: demo
 group: Demo
 invocation:
   allow_http: true
-  allow_schedule: false
+  allow_schedule: true
 
 example_payloads:
   - name: simple-order

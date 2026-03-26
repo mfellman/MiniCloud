@@ -20,7 +20,7 @@ spec:
       containers:
         - name: dashboard
           image: minicloud/dashboard:latest
-          imagePullPolicy: Always
+          imagePullPolicy: Never
           ports:
             - containerPort: 8080
           env:
@@ -28,6 +28,8 @@ spec:
               value: "http://gateway:8080"
             - name: ORCHESTRATOR_URL
               value: "http://orchestrator:8080"
+            - name: SCHEDULER_URL
+              value: "http://scheduler:8089"
             - name: STORAGE_SERVICE_URL
               value: "http://storage:8080"
             - name: IDENTITY_URL

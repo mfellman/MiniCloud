@@ -77,6 +77,7 @@ $PORT_FORWARDS = @(
     @{ Local = 8085; Svc = 'egress-ssh';  Port = 8080 }
     @{ Local = 8087; Svc = 'egress-rabbitmq'; Port = 8080 }
     @{ Local = 8090; Svc = 'dashboard';   Port = 8080 }
+    @{ Local = 8089; Svc = 'scheduler';   Port = 8089 }
 )
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,9 @@ if ($status -eq 'Running') {
 # Zorg dat kubectl de juiste context gebruikt
 minikube update-context --profile $PROFILE | Out-Null
 
+# Haal het minikube IP-adres op voor NodePort-URLs in de samenvatting
+$MINIKUBE_IP = (minikube ip --profile $PROFILE 2>$null).Trim()
+
 # ---------------------------------------------------------------------------
 # Stap 3: Ingress-addon inschakelen
 # ---------------------------------------------------------------------------
@@ -196,6 +200,7 @@ if ($SkipBuild) {
         @{ Tag = 'minicloud/orchestrator:latest';    Context = 'services/orchestrator';             Dockerfile = 'services/orchestrator/Dockerfile' }
         @{ Tag = 'minicloud/gateway:latest';         Context = 'services/gateway';                  Dockerfile = 'services/gateway/Dockerfile' }
         @{ Tag = 'minicloud/dashboard:latest';       Context = 'services/dashboard';                Dockerfile = 'services/dashboard/Dockerfile' }
+        @{ Tag = 'minicloud/scheduler:latest';       Context = 'services/scheduler';                Dockerfile = 'services/scheduler/Dockerfile' }
     )
 
     foreach ($b in $builds) {
@@ -231,7 +236,7 @@ Write-Step "Wachten tot alle deployments gereed zijn (max 5 minuten)"
 $deployments = @(
     'gateway', 'orchestrator', 'storage', 'identity', 'transformers',
     'egress-http', 'egress-ftp', 'egress-ssh', 'egress-rabbitmq',
-    'dashboard', 'rabbitmq'
+    'dashboard', 'rabbitmq', 'scheduler'
 )
 foreach ($dep in $deployments) {
     Write-Host "    Wachten op: $dep"
@@ -247,7 +252,32 @@ if ($SkipPortForward) {
 } else {
     Write-Step "Port-forwards instellen"
 
-    # Stop eventuele eerder gestarte port-forwards van dit script
+    # Stop eventuele eerder gestarte port-forwards van dit script.
+    # Remove-Job alleen is niet voldoende: kubectl child-processen blijven anders
+    # draaien en houden de poorten bezet. Sluit ze eerst af via .NET Kill().
+    Get-Job -Name 'mc-pf-*' -ErrorAction SilentlyContinue | ForEach-Object {
+        $_ | Receive-Job -ErrorAction SilentlyContinue | Out-Null
+        $_.ChildJobs | ForEach-Object {
+            if ($_.Output.Count -gt 0) { $_.Output.ReadAll() | Out-Null }
+        }
+    }
+    # Kill kubectl-processen die op onze port-forward-poorten luisteren
+    foreach ($pf in $PORT_FORWARDS) {
+        $port = $pf.Local
+        $netResult = netstat -ano 2>$null | Select-String ":$port\s"
+        if ($netResult) {
+            $netResult | ForEach-Object {
+                $parts = ($_ -split '\s+').Where({ $_ -ne '' })
+                $pid_ = $parts[-1]
+                if ($pid_ -match '^\d+$') {
+                    $proc = Get-Process -Id ([int]$pid_) -ErrorAction SilentlyContinue
+                    if ($proc -and $proc.ProcessName -eq 'kubectl') {
+                        [System.Diagnostics.Process]::GetProcessById([int]$pid_).Kill()
+                    }
+                }
+            }
+        }
+    }
     Get-Job -Name 'mc-pf-*' -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 
     $pfJobs = @()
@@ -294,6 +324,7 @@ if ($RunTests) {
     $env:EGRESS_SSH_URL       = 'http://localhost:8085'
     $env:EGRESS_RABBITMQ_URL  = 'http://localhost:8087'
     $env:DASHBOARD_URL        = 'http://localhost:8090'
+    $env:SCHEDULER_URL        = 'http://localhost:8089'
 
     python -m pytest -v tests/
 }
@@ -313,6 +344,7 @@ Write-Host " Dashboard          http://localhost:8090"
 Write-Host " Orchestrator       http://localhost:8083"
 Write-Host " Storage            http://localhost:8086"
 Write-Host " Identity           http://localhost:8088"
+Write-Host " Scheduler          http://localhost:8089"
 Write-Host " Transformers       http://localhost:8081"
 Write-Host " Egress HTTP        http://localhost:8082"
 Write-Host " Egress FTP         http://localhost:8084"

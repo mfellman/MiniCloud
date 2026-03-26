@@ -84,6 +84,8 @@ RELOAD_TOKEN = os.environ.get("ORCH_RELOAD_TOKEN", "").strip()
 HTTP_INVOCATION_TOKEN = os.environ.get("HTTP_INVOCATION_TOKEN", "").strip()
 # Optioneel: Bearer voor POST /invoke/scheduled (CronJob / interne caller).
 SCHEDULE_INVOCATION_TOKEN = os.environ.get("SCHEDULE_INVOCATION_TOKEN", "").strip()
+# Scheduler service for proxying schedule management requests
+SCHEDULER_URL = os.environ.get("SCHEDULER_URL", "http://localhost:8089").rstrip("/")
 
 app = FastAPI(title="MiniCloud Orchestrator", version="0.1.0")
 _WORKFLOWS: dict[str, WorkflowDoc] = {}
@@ -580,3 +582,172 @@ def api_get_step_data(request_id: str, step_path: str, kind: str) -> PlainTextRe
     if data is None:
         raise HTTPException(status_code=404, detail="Step data not found")
     return PlainTextResponse(content=data)
+
+
+# ---------------------------------------------------------------------------
+# Scheduler proxy endpoints (forward to scheduler service)
+# ---------------------------------------------------------------------------
+@app.get("/api/scheduler/schedules")
+async def api_scheduler_list_schedules(
+    x_user: Annotated[str | None, Header(alias="X-User")] = None,
+) -> dict:
+    """Proxy GET /schedules to scheduler service."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.get(
+                f"{SCHEDULER_URL}/schedules",
+                headers={"X-User": x_user or "anonymous"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        LOG.error("scheduler list schedules failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Scheduler service error: {e}") from e
+
+
+@app.post("/api/scheduler/schedules")
+async def api_scheduler_create_schedule(
+    body: dict,
+    x_user: Annotated[str | None, Header(alias="X-User")] = None,
+) -> dict:
+    """Proxy POST /schedules to scheduler service."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.post(
+                f"{SCHEDULER_URL}/schedules",
+                json=body,
+                headers={"X-User": x_user or "anonymous"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        LOG.error("scheduler create schedule failed: %s", e)
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        raise HTTPException(status_code=e.response.status_code, detail=detail) from e
+    except Exception as e:
+        LOG.error("scheduler create schedule exception: %s", e)
+        raise HTTPException(status_code=502, detail=f"Scheduler service error: {e}") from e
+
+
+@app.delete("/api/scheduler/schedules/{job_id}")
+async def api_scheduler_delete_schedule(
+    job_id: str,
+    x_user: Annotated[str | None, Header(alias="X-User")] = None,
+) -> dict:
+    """Proxy DELETE /schedules/{job_id} to scheduler service."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.delete(
+                f"{SCHEDULER_URL}/schedules/{job_id}",
+                headers={"X-User": x_user or "anonymous"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        LOG.error("scheduler delete schedule failed: %s", e)
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        raise HTTPException(status_code=e.response.status_code, detail=detail) from e
+    except Exception as e:
+        LOG.error("scheduler delete schedule exception: %s", e)
+        raise HTTPException(status_code=502, detail=f"Scheduler service error: {e}") from e
+
+
+# Named Schedules (admin managed)
+@app.get("/api/scheduler/named-schedules")
+async def api_scheduler_list_named_schedules() -> dict:
+    """Proxy GET /named-schedules to scheduler service (public)."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.get(f"{SCHEDULER_URL}/named-schedules")
+            resp.raise_for_status()
+            return {"schedules": resp.json()}
+    except Exception as e:
+        LOG.error("scheduler list named schedules failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Scheduler service error: {e}") from e
+
+
+@app.post("/api/scheduler/named-schedules")
+async def api_scheduler_create_named_schedule(
+    body: dict,
+    x_user: Annotated[str | None, Header(alias="X-User")] = None,
+) -> dict:
+    """Proxy POST /named-schedules to scheduler service (admin only)."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.post(
+                f"{SCHEDULER_URL}/named-schedules",
+                json=body,
+                headers={"X-User": x_user or "anonymous"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        LOG.error("scheduler create named schedule failed: %s", e)
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        raise HTTPException(status_code=e.response.status_code, detail=detail) from e
+    except Exception as e:
+        LOG.error("scheduler create named schedule exception: %s", e)
+        raise HTTPException(status_code=502, detail=f"Scheduler service error: {e}") from e
+
+
+@app.put("/api/scheduler/named-schedules/{schedule_id}")
+async def api_scheduler_update_named_schedule(
+    schedule_id: str,
+    body: dict,
+    x_user: Annotated[str | None, Header(alias="X-User")] = None,
+) -> dict:
+    """Proxy PUT /named-schedules/{schedule_id} to scheduler service (admin only)."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.put(
+                f"{SCHEDULER_URL}/named-schedules/{schedule_id}",
+                json=body,
+                headers={"X-User": x_user or "anonymous"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        LOG.error("scheduler update named schedule failed: %s", e)
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        raise HTTPException(status_code=e.response.status_code, detail=detail) from e
+    except Exception as e:
+        LOG.error("scheduler update named schedule exception: %s", e)
+        raise HTTPException(status_code=502, detail=f"Scheduler service error: {e}") from e
+
+
+@app.delete("/api/scheduler/named-schedules/{schedule_id}")
+async def api_scheduler_delete_named_schedule(
+    schedule_id: str,
+    x_user: Annotated[str | None, Header(alias="X-User")] = None,
+) -> dict:
+    """Proxy DELETE /named-schedules/{schedule_id} to scheduler service (admin only)."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.delete(
+                f"{SCHEDULER_URL}/named-schedules/{schedule_id}",
+                headers={"X-User": x_user or "anonymous"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        LOG.error("scheduler delete named schedule failed: %s", e)
+        try:
+            detail = e.response.json().get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        raise HTTPException(status_code=e.response.status_code, detail=detail) from e
+    except Exception as e:
+        LOG.error("scheduler delete named schedule exception: %s", e)
+        raise HTTPException(status_code=502, detail=f"Scheduler service error: {e}") from e

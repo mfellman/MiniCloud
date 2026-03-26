@@ -2,6 +2,7 @@
 # Images: minicloud/gateway, transformers, egress-http/ftp/ssh, orchestrator (see local-kind.sh)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: minicloud
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
@@ -48,6 +49,8 @@ resources:
   - orchestrator-deployment.yaml
   - orchestrator-queue-subscriber-deployment.yaml
   - orchestrator-service.yaml
+  - scheduler-deployment.yaml
+  - scheduler-service.yaml
   - gateway-deployment.yaml
   - gateway-service.yaml
   - dashboard-deployment.yaml

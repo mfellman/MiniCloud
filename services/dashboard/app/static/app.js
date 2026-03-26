@@ -146,6 +146,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("rerunModalCancel").addEventListener("click", closeRerunModal);
   document.getElementById("rerunModalConfirm").addEventListener("click", submitRerun);
 
+  // Schedule modal handlers
+  document.getElementById("btnScheduleWorkflow").addEventListener("click", openScheduleModal);
+  document.getElementById("btnViewSchedules").addEventListener("click", openSchedulesListModal);
+  document.getElementById("scheduleModalClose").addEventListener("click", closeScheduleModal);
+  document.getElementById("scheduleModalBackdrop").addEventListener("click", closeScheduleModal);
+  document.getElementById("scheduleModalCancel").addEventListener("click", closeScheduleModal);
+  document.getElementById("scheduleModalConfirm").addEventListener("click", submitSchedule);
+  document.getElementById("scheduleTemplateSelect").addEventListener("change", onScheduleTemplateChanged);
+
+  // Schedules list modal
+  document.getElementById("schedulesListModalBackdrop").addEventListener("click", closeSchedulesListModal);
+  document.getElementById("schedulesListModalClose").addEventListener("click", closeSchedulesListModal);
+  document.getElementById("schedulesListModalClose2").addEventListener("click", closeSchedulesListModal);
+
+  // Schedule templates panel (admin)
+  document.getElementById("navScheduleTemplates").addEventListener("click", selectScheduleTemplatesView);
+  document.getElementById("btnCreateTemplate").addEventListener("click", openTemplateModal);
+  document.getElementById("btnTemplatesRefresh").addEventListener("click", loadScheduleTemplates);
+  document.getElementById("templateModalClose").addEventListener("click", closeTemplateModal);
+  document.getElementById("templateModalBackdrop").addEventListener("click", closeTemplateModal);
+  document.getElementById("templateModalCancel").addEventListener("click", closeTemplateModal);
+  document.getElementById("templateModalConfirm").addEventListener("click", submitTemplate);
+
   document.querySelectorAll(".detail-tabs .tab").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
@@ -286,7 +309,7 @@ async function selectWorkflow(name) {
   highlightSidebar(name);
   setBreadcrumb([{ label: name }]);
 
-  show("workflowPanel"); hide("runPanel"); hide("rabbitPanel"); hide("storagePanel"); hide("accessPanel"); hide("placeholder");
+  show("workflowPanel"); hide("runPanel"); hide("rabbitPanel"); hide("storagePanel"); hide("accessPanel"); hide("scheduleTemplatesPanel"); hide("placeholder");
   document.getElementById("wfTitle").textContent = name;
   document.getElementById("wfGroupLabel").textContent = "Loading\u2026";
   document.getElementById("wfStats").innerHTML = "";
@@ -424,7 +447,7 @@ async function selectRun(requestId, workflowName) {
     { label: shortId(requestId) },
   ]);
 
-  hide("placeholder"); hide("workflowPanel"); hide("rabbitPanel"); hide("storagePanel"); hide("accessPanel"); show("runPanel");
+  hide("placeholder"); hide("workflowPanel"); hide("rabbitPanel"); hide("storagePanel"); hide("accessPanel"); hide("scheduleTemplatesPanel"); show("runPanel");
 
   try {
     const trace = await api(`/api/traces/${encodeURIComponent(requestId)}`);
@@ -567,6 +590,446 @@ function buildStepTraceMap(traceSteps) {
   }
   return map;
 }
+
+// ---------------------------------------------------------------------------
+// Schedule modal
+// ---------------------------------------------------------------------------
+const SCHEDULER_API_URL = "/api/scheduler";  // Proxied through orchestrator to scheduler service
+let scheduleContext = { workflow: null };
+let scheduleTemplates = [];  // Cache van available templates
+
+async function openScheduleModal() {
+  if (!currentWorkflowName) {
+    alert("No workflow selected");
+    return;
+  }
+
+  // Load templates
+  await loadScheduleTemplatesForDropdown();
+
+  // Pre-fill with first example payload
+  let defaultPayload = "<root/>";
+  if (currentWorkflow && Array.isArray(currentWorkflow.example_payloads) && currentWorkflow.example_payloads.length > 0) {
+    const ep = currentWorkflow.example_payloads[0];
+    if (ep && ep.payload && ep.payload.xml) {
+      defaultPayload = ep.payload.xml;
+    }
+  }
+
+  scheduleContext = { workflow: currentWorkflowName };
+  document.getElementById("scheduleWorkflowName").textContent = `Workflow: ${esc(currentWorkflowName)}`;
+  document.getElementById("scheduleTemplateSelect").value = "";
+  document.getElementById("scheduleCronExpression").value = "0 0 * * *";  // Default: daily midnight
+  document.getElementById("schedulePayload").value = defaultPayload;
+  document.getElementById("scheduleError").classList.add("hidden");
+
+  const modal = document.getElementById("scheduleModal");
+  modal.classList.remove("hidden");
+}
+
+async function loadScheduleTemplatesForDropdown() {
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/named-schedules`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    scheduleTemplates = data.schedules || [];
+
+    const selectEl = document.getElementById("scheduleTemplateSelect");
+    // Clear old options (keep the first one)
+    while (selectEl.children.length > 1) {
+      selectEl.removeChild(selectEl.children[1]);
+    }
+
+    for (const t of scheduleTemplates) {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = `${t.name} (${t.cron_expression})`;
+      selectEl.appendChild(opt);
+    }
+  } catch (e) {
+    console.error("loadScheduleTemplatesForDropdown", e);
+  }
+}
+
+function onScheduleTemplateChanged() {
+  const templateId = document.getElementById("scheduleTemplateSelect").value;
+  if (!templateId) {
+    document.getElementById("scheduleCronExpression").value = "0 0 * * *";
+    return;
+  }
+
+  const template = scheduleTemplates.find(t => t.id === templateId);
+  if (template) {
+    document.getElementById("scheduleCronExpression").value = template.cron_expression;
+  }
+}
+
+function closeScheduleModal() {
+  const modal = document.getElementById("scheduleModal");
+  modal.classList.add("hidden");
+  scheduleContext = { workflow: null };
+}
+
+async function submitSchedule() {
+  const cronEl = document.getElementById("scheduleCronExpression");
+  const payloadEl = document.getElementById("schedulePayload");
+  const templateSelectEl = document.getElementById("scheduleTemplateSelect");
+  const errorEl = document.getElementById("scheduleError");
+  const confirmBtn = document.getElementById("scheduleModalConfirm");
+
+  const cron = (cronEl.value || "").trim();
+  const payload = (payloadEl.value || "").trim();
+  const templateId = (templateSelectEl.value || "").trim() || null;
+
+  if (!cron) {
+    errorEl.textContent = "Cron expression is required.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  if (!payload) {
+    errorEl.textContent = "Payload is required.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  confirmBtn.disabled = true;
+  errorEl.classList.add("hidden");
+
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/schedules`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User": identitySession.username || "anonymous"
+      },
+      body: JSON.stringify({
+        workflow_name: scheduleContext.workflow,
+        cron_expression: cron,
+        named_schedule_id: templateId,
+        payload: payload
+      })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      errorEl.textContent = `Schedule failed (${resp.status}): ${data.detail || JSON.stringify(data)}`;
+      errorEl.classList.remove("hidden");
+      return;
+    }
+
+    closeScheduleModal();
+    // Show success and refresh schedules list
+    alert("Schedule created successfully!");
+    await openSchedulesListModal();  // Refresh the list
+  } catch (e) {
+    errorEl.textContent = `Schedule failed: ${e.message || e}`;
+    errorEl.classList.remove("hidden");
+  } finally {
+    confirmBtn.disabled = false;
+  }
+}
+
+async function openSchedulesListModal() {
+  const modal = document.getElementById("schedulesListModal");
+  const emptyEl = document.getElementById("schedulesListEmpty");
+  const tableEl = document.getElementById("schedulesListTable");
+  const bodyEl = document.getElementById("schedulesListBody");
+
+  modal.classList.remove("hidden");
+
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/schedules`, {
+      headers: { "X-User": identitySession.username || "anonymous" }
+    });
+
+    if (!resp.ok) {
+      emptyEl.textContent = `Failed to load schedules: ${resp.status}`;
+      tableEl.style.display = "none";
+      return;
+    }
+
+    const schedules = await resp.json();
+    // Filter to current workflow only (if needed)
+    const filtered = schedules.filter(s => !currentWorkflowName || s.workflow_name === currentWorkflowName);
+
+    if (filtered.length === 0) {
+      emptyEl.textContent = "No schedules for this workflow.";
+      tableEl.style.display = "none";
+      return;
+    }
+
+    bodyEl.innerHTML = "";
+    for (const sched of filtered) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${esc(sched.workflow_name)}</td>
+        <td><code style="font-size:12px;background:var(--bg-alt);padding:2px 4px;">${esc(sched.cron_expression)}</code></td>
+        <td>${sched.next_run_time ? new Date(sched.next_run_time).toLocaleString() : "Never"}</td>
+        <td>
+          <button class="btn-small" onclick="deleteSchedule('${esc(sched.job_id)}', event)">Delete</button>
+        </td>
+      `;
+      bodyEl.appendChild(tr);
+    }
+
+    emptyEl.style.display = "none";
+    tableEl.style.display = "table";
+  } catch (e) {
+    console.error("openSchedulesListModal", e);
+    emptyEl.textContent = `Error loading schedules: ${e.message || e}`;
+    tableEl.style.display = "none";
+  }
+}
+
+function closeSchedulesListModal() {
+  const modal = document.getElementById("schedulesListModal");
+  modal.classList.add("hidden");
+}
+
+async function deleteSchedule(jobId, event) {
+  event.stopPropagation();
+  if (!confirm(`Delete this schedule?`)) return;
+
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/schedules/${encodeURIComponent(jobId)}`, {
+      method: "DELETE",
+      headers: { "X-User": identitySession.username || "anonymous" }
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      alert(`Delete failed (${resp.status}): ${data.detail || JSON.stringify(data)}`);
+      return;
+    }
+
+    // Refresh the schedules list
+    await openSchedulesListModal();
+  } catch (e) {
+    alert(`Delete failed: ${e.message || e}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Schedule Template Management (Admin)
+// ---------------------------------------------------------------------------
+let templateEditContext = { id: null };
+
+function selectScheduleTemplatesView() {
+  currentWorkflowName = null;
+  currentRunId = null;
+  currentTrace = null;
+  currentWorkflow = null;
+  closeDetail();
+  setBreadcrumb([{ label: "Schedule Templates" }]);
+
+  hide("workflowPanel");
+  hide("runPanel");
+  hide("rabbitPanel");
+  hide("storagePanel");
+  hide("accessPanel");
+  hide("placeholder");
+  show("scheduleTemplatesPanel");
+
+  loadScheduleTemplates();
+}
+
+async function loadScheduleTemplates() {
+  const emptyEl = document.getElementById("templatesEmpty");
+  const tableEl = document.getElementById("templatesListTable");
+  const bodyEl = document.getElementById("templatesListBody");
+
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/named-schedules`);
+    if (!resp.ok) {
+      emptyEl.textContent = `Failed to load templates: ${resp.status}`;
+      tableEl.style.display = "none";
+      return;
+    }
+
+    const data = await resp.json();
+    const templates = data.schedules || [];
+
+    if (templates.length === 0) {
+      emptyEl.textContent = "No templates created yet.";
+      tableEl.style.display = "none";
+      return;
+    }
+
+    bodyEl.innerHTML = "";
+    for (const t of templates) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${esc(t.name)}</strong></td>
+        <td><code style="font-size:12px;background:var(--bg-alt);padding:2px 4px;">${esc(t.cron_expression)}</code></td>
+        <td>${esc(t.description || "—")}</td>
+        <td>
+          <button class="btn-small" onclick="editTemplate('${esc(t.id)}', event)">Edit</button>
+          <button class="btn-small" onclick="deleteTemplate('${esc(t.id)}', event)" style="color:var(--error);">Delete</button>
+        </td>
+      `;
+      bodyEl.appendChild(tr);
+    }
+
+    emptyEl.style.display = "none";
+    tableEl.style.display = "table";
+  } catch (e) {
+    console.error("loadScheduleTemplates", e);
+    emptyEl.textContent = `Error loading templates: ${e.message || e}`;
+    tableEl.style.display = "none";
+  }
+}
+
+function openTemplateModal() {
+  templateEditContext = { id: null };
+  document.getElementById("templateModalTitle").textContent = "Create Schedule Template";
+  document.getElementById("templateName").value = "";
+  document.getElementById("templateCronExpression").value = "0 0 * * *";
+  document.getElementById("templateDescription").value = "";
+  document.getElementById("templateError").classList.add("hidden");
+
+  const modal = document.getElementById("templateModal");
+  modal.classList.remove("hidden");
+}
+
+function editTemplate(templateId, event) {
+  event.stopPropagation();
+  const template = scheduleTemplates.find(t => t.id === templateId);
+  if (!template) {
+    alert("Template not found");
+    return;
+  }
+
+  templateEditContext = { id: templateId };
+  document.getElementById("templateModalTitle").textContent = "Edit Schedule Template";
+  document.getElementById("templateName").value = template.name;
+  document.getElementById("templateCronExpression").value = template.cron_expression;
+  document.getElementById("templateDescription").value = template.description || "";
+  document.getElementById("templateError").classList.add("hidden");
+
+  const modal = document.getElementById("templateModal");
+  modal.classList.remove("hidden");
+}
+
+function closeTemplateModal() {
+  const modal = document.getElementById("templateModal");
+  modal.classList.add("hidden");
+  templateEditContext = { id: null };
+}
+
+async function submitTemplate() {
+  const nameEl = document.getElementById("templateName");
+  const cronEl = document.getElementById("templateCronExpression");
+  const descEl = document.getElementById("templateDescription");
+  const errorEl = document.getElementById("templateError");
+  const confirmBtn = document.getElementById("templateModalConfirm");
+
+  const name = (nameEl.value || "").trim();
+  const cron = (cronEl.value || "").trim();
+  const desc = (descEl.value || "").trim();
+
+  if (!name) {
+    errorEl.textContent = "Name is required.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  if (!cron) {
+    errorEl.textContent = "Cron expression is required.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  confirmBtn.disabled = true;
+  errorEl.classList.add("hidden");
+
+  try {
+    const isCreate = !templateEditContext.id;
+    const url = isCreate 
+      ? `${SCHEDULER_API_URL}/named-schedules`
+      : `${SCHEDULER_API_URL}/named-schedules/${encodeURIComponent(templateEditContext.id)}`;
+    const method = isCreate ? "POST" : "PUT";
+
+    const resp = await fetch(url, {
+      method: method,
+      headers: {
+        "Content-Type": "application/json",
+        "X-User": identitySession.username || "anonymous"
+      },
+      body: JSON.stringify({
+        name: name,
+        cron_expression: cron,
+        description: desc
+      })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      errorEl.textContent = `Failed (${resp.status}): ${data.detail || JSON.stringify(data)}`;
+      errorEl.classList.remove("hidden");
+      return;
+    }
+
+    closeTemplateModal();
+    alert(`Template ${isCreate ? "created" : "updated"} successfully!`);
+    await loadScheduleTemplates();
+    await loadScheduleTemplatesForDropdown();
+  } catch (e) {
+    errorEl.textContent = `Failed: ${e.message || e}`;
+    errorEl.classList.remove("hidden");
+  } finally {
+    confirmBtn.disabled = false;
+  }
+}
+
+async function deleteTemplate(templateId, event) {
+  event.stopPropagation();
+  if (!confirm(`Delete this template?`)) return;
+
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/named-schedules/${encodeURIComponent(templateId)}`, {
+      method: "DELETE",
+      headers: { "X-User": identitySession.username || "anonymous" }
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      alert(`Delete failed (${resp.status}): ${data.detail || JSON.stringify(data)}`);
+      return;
+    }
+
+    alert("Template deleted successfully!");
+    await loadScheduleTemplates();
+    await loadScheduleTemplatesForDropdown();
+  } catch (e) {
+    alert(`Delete failed: ${e.message || e}`);
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // Workflow design overlay
@@ -1035,7 +1498,7 @@ function setBreadcrumb(parts) {
     closeDetail();
     clearSidebarHighlight();
     clearSideNavSelection();
-    show("placeholder"); hide("workflowPanel"); hide("runPanel"); hide("rabbitPanel"); hide("storagePanel"); hide("accessPanel");
+    show("placeholder"); hide("workflowPanel"); hide("runPanel"); hide("rabbitPanel"); hide("storagePanel"); hide("accessPanel"); hide("scheduleTemplatesPanel");
     setBreadcrumb([]);
   });
   bc.appendChild(home);
@@ -1116,6 +1579,7 @@ async function selectRabbitMQView() {
   hide("runPanel");
   hide("storagePanel");
   hide("accessPanel");
+  hide("scheduleTemplatesPanel");
   show("rabbitPanel");
 
   await loadRabbitMQView();
@@ -1136,6 +1600,7 @@ async function selectStorageView() {
   hide("runPanel");
   hide("rabbitPanel");
   hide("accessPanel");
+  hide("scheduleTemplatesPanel");
   show("storagePanel");
 
   await loadStorageView();
@@ -1155,6 +1620,7 @@ async function selectAccessView() {
   hide("runPanel");
   hide("rabbitPanel");
   hide("storagePanel");
+  hide("scheduleTemplatesPanel");
   show("accessPanel");
 
   await loadAccessView();

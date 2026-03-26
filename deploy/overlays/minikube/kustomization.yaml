@@ -170,3 +170,18 @@ patches:
             containers:
               - name: dashboard
                 imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: scheduler
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: scheduler
+      spec:
+        template:
+          spec:
+            containers:
+              - name: scheduler
+                imagePullPolicy: Never
