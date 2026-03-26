@@ -21,6 +21,7 @@ Images produced by CI (image name = Kaniko `IMAGE_NAME` / path segment):
 | gateway        | `gateway`                                     |
 | transformers   | `transformers`                                |
 | orchestrator   | `orchestrator`                                |
+| dashboard      | `dashboard`                                   |
 | egress-http    | `egress-http`                                 |
 | egress-ftp     | `egress-ftp`                                  |
 | egress-ssh     | `egress-ssh`                                  |
@@ -38,7 +39,7 @@ Use a **immutable tag** (commit SHA) for production instead of `:latest` when po
 ## 2. Build and publish images
 
 1. Push code to a branch; GitLab CI **build** stage runs Kaniko jobs in parallel.
-2. In **Deploy → Container Registry**, confirm images such as `gateway`, `transformers`, etc.
+2. In **Deploy → Container Registry**, confirm images such as `gateway`, `orchestrator`, `dashboard`, `transformers`, etc.
 3. Note your registry host (usually `registry.gitlab.com`) and the **project path** (group + project slug).
 
 ---
@@ -101,7 +102,7 @@ The overlay does **not** patch `imagePullSecrets` (to avoid merge conflicts with
 
 ```bash
 NS=minicloud
-for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh; do
+for d in gateway orchestrator dashboard transformers egress-http egress-ftp egress-ssh; do
   kubectl patch deployment "$d" -n "$NS" --type merge -p \
     '{"spec":{"template":{"spec":{"imagePullSecrets":[{"name":"gitlab-registry"}]}}}}'
 done
@@ -168,6 +169,7 @@ Review and override via Kustomize `configMapGenerator` / `patches` or separate S
 |------|----------|
 | Gateway | `ORCHESTRATOR_URL`, optional `GATEWAY_ORCHESTRATION_ONLY` (default manifests: `true`; only `/v1/run*` public). No `TRANSFORMERS_URL` on gateway when orchestration-only. |
 | Orchestrator | `TRANSFORMERS_URL`, `EGRESS_*`, `WORKFLOWS_DIR`; optional `HTTP_INVOCATION_TOKEN`, `SCHEDULE_INVOCATION_TOKEN` (Secrets). |
+| Dashboard | `ORCHESTRATOR_URL`, optional `DASH_DEFAULT_LIMIT`, `DASH_TIMEOUT_SECONDS`. |
 | HTTP workflow triggers | Optional `HTTP_INVOCATION_TOKEN` (**Secret**); gateway forwards `Authorization`. |
 | Scheduled jobs | Optional `SCHEDULE_INVOCATION_TOKEN` (**Secret**); see `orchestrator-deployment.yaml`. |
 | Egress hardening | `HTTP_EGRESS_ALLOWED_HOSTS`, `FTP_EGRESS_ALLOWED_HOSTS`, `SSH_EGRESS_ALLOWED_HOSTS`. |
@@ -181,7 +183,8 @@ Base Deployments already set in-cluster URLs for Compose-style names; they remai
 1. `kubectl get pods -n minicloud` — all pods **Running**.
 2. `kubectl logs -n minicloud deploy/gateway` — no repeated connection errors to orchestrator/transformers.
 3. `curl -s http://127.0.0.1:8080/healthz` (via port-forward) — `{"status":"ok"}`.
-4. Run a workflow, e.g. `POST /v1/run/minimal` on the gateway (see [README – Examples](../README.md#examples-curl)).
+4. (Optional) `kubectl port-forward -n minicloud svc/dashboard 8090:8080` and open `http://127.0.0.1:8090`.
+5. Run a workflow, e.g. `POST /v1/run/minimal` on the gateway (see [README – Examples](../README.md#examples-curl)).
 
 ---
 
