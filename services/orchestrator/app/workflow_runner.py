@@ -17,6 +17,7 @@ def _load_oauth_enforcement():
         from app.oauth_policy import (
             enforce_connection_oauth as eco,
             enforce_egress as ef,
+            enforce_storage as es,
             enforce_workflow_invocation as ew,
         )
     except ImportError:
@@ -35,7 +36,8 @@ def _load_oauth_enforcement():
             mod.enforce_workflow_invocation,
             mod.enforce_connection_oauth,
         )
-    return ef, ew, eco
+        es = mod.enforce_storage
+    return ef, ew, eco, es
 
 
 def _load_resolve_http_url():
@@ -56,7 +58,7 @@ def _load_resolve_http_url():
     return rh
 
 
-_enforce_egress, _enforce_workflow_invocation, _enforce_connection_oauth = _load_oauth_enforcement()
+_enforce_egress, _enforce_workflow_invocation, _enforce_connection_oauth, _enforce_storage = _load_oauth_enforcement()
 _resolve_http_url = _load_resolve_http_url()
 
 
@@ -265,6 +267,41 @@ class SftpWorkflowStep(WhenMixin):
         return self
 
 
+class RabbitMqPublishConfig(BaseModel):
+    url: str | None = Field(
+        default=None,
+        description="AMQP URL; required when connection is omitted",
+    )
+    exchange: str = Field(default="minicloud.events", min_length=1)
+    exchange_type: Literal["topic", "direct", "fanout", "headers"] = "topic"
+    routing_key: str | None = None
+    message_from: str = Field(
+        ...,
+        description="initial | previous | <step_id> | context:<key>",
+    )
+    properties: dict[str, str] = Field(default_factory=dict)
+    property_refs: dict[str, str] = Field(
+        default_factory=dict,
+        description="Property name to ref mapping, refs follow message_from rules",
+    )
+    headers: dict[str, str] = Field(default_factory=dict)
+    persistent: bool = True
+    content_type: str = "text/plain"
+
+
+class RabbitMqPublishWorkflowStep(WhenMixin):
+    type: Literal["rabbitmq_publish"] = "rabbitmq_publish"
+    id: str
+    connection: str | None = None
+    rabbitmq: RabbitMqPublishConfig
+
+    @model_validator(mode="after")
+    def rabbitmq_connection_rules(self) -> RabbitMqPublishWorkflowStep:
+        if self.connection is None and not self.rabbitmq.url:
+            raise ValueError("rabbitmq.url is required when connection is omitted")
+        return self
+
+
 class Xml2JsonWorkflowStep(WhenMixin):
     type: Literal["xml2json"] = "xml2json"
     id: str
@@ -290,6 +327,59 @@ class LiquidWorkflowStep(WhenMixin):
     input_from: str | None = Field(
         default=None,
         description="JSON-context string: initial | previous | <step_id>",
+    )
+
+
+class StorageReadConfig(BaseModel):
+    bucket: str = Field(..., min_length=1)
+    key: str = Field(..., min_length=1)
+    output_field: str = Field(
+        default="value",
+        description="Which response field to return as step output, default: value",
+    )
+    write_context_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("write_context_key", "also_variable"),
+    )
+    required_scope: str | None = Field(
+        default=None,
+        description="Optional extra scope required besides storage:read",
+    )
+
+
+class StorageWriteConfig(BaseModel):
+    bucket: str = Field(..., min_length=1)
+    key: str = Field(..., min_length=1)
+    value_from: str = Field(
+        ...,
+        description="initial | previous | <step_id> | context:<key> | var:<key>",
+    )
+    content_type: str = "text/plain"
+    write_context_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("write_context_key", "also_variable"),
+    )
+    required_scope: str | None = Field(
+        default=None,
+        description="Optional extra scope required besides storage:write",
+    )
+
+
+class StorageReadWorkflowStep(WhenMixin):
+    type: Literal["storage_read"] = "storage_read"
+    id: str
+    storage_read: StorageReadConfig = Field(
+        ...,
+        validation_alias=AliasChoices("storage_read", "storage"),
+    )
+
+
+class StorageWriteWorkflowStep(WhenMixin):
+    type: Literal["storage_write"] = "storage_write"
+    id: str
+    storage_write: StorageWriteConfig = Field(
+        ...,
+        validation_alias=AliasChoices("storage_write", "storage"),
     )
 
 
@@ -441,9 +531,12 @@ WorkflowStep = Annotated[
         FtpWorkflowStep,
         SshWorkflowStep,
         SftpWorkflowStep,
+        RabbitMqPublishWorkflowStep,
         Xml2JsonWorkflowStep,
         Json2XmlWorkflowStep,
         LiquidWorkflowStep,
+        StorageReadWorkflowStep,
+        StorageWriteWorkflowStep,
         ContextSetWorkflowStep,
         ContextExtractJsonWorkflowStep,
         ContextExtractXmlWorkflowStep,
@@ -640,6 +733,10 @@ async def run_workflow(
     granted_scopes: frozenset[str] | None = None,
     connections: dict[str, Any] | None = None,
     run_trace: Any = None,
+    egress_rabbitmq_url: str | None = None,
+    storage_base_url: str = "",
+    storage_bearer_token: str = "",
+    storage_roles_header: str = "",
 ) -> tuple[str, dict[str, str], list[dict[str, Any]], dict[str, str]]:
     outputs: dict[str, str] = {}
     context: dict[str, str] = {}
@@ -959,6 +1056,67 @@ async def run_workflow(
                 collector.add_step(st.finish(ok=True))
             trace.append({"step": step.id, "type": "sftp", "ok": True})
             return out_body
+        elif isinstance(step, RabbitMqPublishWorkflowStep):
+            _enforce_egress(granted_scopes, "rabbitmq", step_id=step.id)
+            st = collector.step(step.id, "rabbitmq_publish") if collector else None
+            if not egress_rabbitmq_url:
+                raise RuntimeError("rabbitmq_publish step configured but egress_rabbitmq_url is not set")
+            spec = step.rabbitmq
+            conn_name = step.connection
+            if conn_name:
+                c = _require_connection(conn_reg, conn_name, "rabbitmq", step.id)
+                _enforce_connection_oauth(
+                    granted_scopes,
+                    getattr(c, "oauth_scope", None),
+                    step_id=step.id,
+                    connection_name=conn_name,
+                )
+                payload = {
+                    "url": c.url,
+                    "exchange": c.exchange,
+                    "exchange_type": c.exchange_type,
+                    "routing_key": spec.routing_key or getattr(c, "routing_key", None) or "",
+                    "properties": dict(spec.properties),
+                    "headers": dict(spec.headers),
+                    "persistent": spec.persistent,
+                    "content_type": spec.content_type,
+                }
+            else:
+                payload = {
+                    "url": spec.url,
+                    "exchange": spec.exchange,
+                    "exchange_type": spec.exchange_type,
+                    "routing_key": spec.routing_key or "",
+                    "properties": dict(spec.properties),
+                    "headers": dict(spec.headers),
+                    "persistent": spec.persistent,
+                    "content_type": spec.content_type,
+                }
+            payload["message"] = _resolve(spec.message_from, initial=initial, prev=prev, idx=idx)
+            for prop_name, ref in spec.property_refs.items():
+                payload["properties"][prop_name] = _resolve(ref, initial=initial, prev=prev, idx=idx)
+            if st:
+                st.record_input(json.dumps(payload, ensure_ascii=False))
+            r = await httpx_client.post(
+                f"{egress_rabbitmq_url.rstrip('/')}/publish",
+                json=payload,
+                headers={"X-Request-ID": request_id, "Content-Type": "application/json"},
+            )
+            if r.status_code >= 400:
+                detail = r.text
+                try:
+                    detail = r.json().get("detail", detail)
+                except Exception:
+                    pass
+                raise RuntimeError(f"rabbitmq_publish step {step.id!r} failed: {detail}")
+            data = r.json()
+            out_body = json.dumps(data, ensure_ascii=False)
+            outputs[step.id] = out_body
+            if st:
+                st.record_output(out_body)
+                collector.add_step(st.finish(ok=True))
+            trace.append({"step": step.id, "type": "rabbitmq_publish", "ok": True})
+            return out_body
         elif isinstance(step, Xml2JsonWorkflowStep):
             st = collector.step(step.id, "xml2json") if collector else None
             inp = _resolve(step.input_from, initial=initial, prev=prev, idx=idx)
@@ -1031,6 +1189,86 @@ async def run_workflow(
                 collector.add_step(st.finish(ok=True))
             trace.append({"step": step.id, "type": "liquid", "ok": True})
             return body
+        elif isinstance(step, StorageReadWorkflowStep):
+            st = collector.step(step.id, "storage_read") if collector else None
+            spec = step.storage_read
+            _enforce_storage(granted_scopes, "read", step_id=step.id)
+            _enforce_connection_oauth(
+                granted_scopes,
+                spec.required_scope,
+                step_id=step.id,
+                connection_name="storage",
+            )
+            if not storage_base_url:
+                raise RuntimeError("storage_read requires STORAGE_SERVICE_URL / storage_base_url")
+            url = f"{storage_base_url.rstrip('/')}/v1/storage/{spec.bucket}/{spec.key}"
+            headers = {"X-Request-ID": request_id}
+            if storage_bearer_token:
+                headers["Authorization"] = f"Bearer {storage_bearer_token}"
+            if storage_roles_header:
+                headers["X-Storage-Roles"] = storage_roles_header
+            r = await httpx_client.get(
+                url,
+                headers=headers,
+            )
+            if r.status_code >= 400:
+                detail = r.text
+                try:
+                    detail = r.json().get("detail", detail)
+                except Exception:
+                    pass
+                raise RuntimeError(f"storage_read step {step.id!r} failed: {detail}")
+            data = r.json()
+            out_value = str(data.get(spec.output_field, ""))
+            outputs[step.id] = out_value
+            if spec.write_context_key:
+                context[spec.write_context_key] = out_value
+            if st:
+                st.record_output(out_value)
+                collector.add_step(st.finish(ok=True))
+            trace.append({"step": step.id, "type": "storage_read", "ok": True})
+            return out_value
+        elif isinstance(step, StorageWriteWorkflowStep):
+            st = collector.step(step.id, "storage_write") if collector else None
+            spec = step.storage_write
+            _enforce_storage(granted_scopes, "write", step_id=step.id)
+            _enforce_connection_oauth(
+                granted_scopes,
+                spec.required_scope,
+                step_id=step.id,
+                connection_name="storage",
+            )
+            if not storage_base_url:
+                raise RuntimeError("storage_write requires STORAGE_SERVICE_URL / storage_base_url")
+            val = _resolve(spec.value_from, initial=initial, prev=prev, idx=idx)
+            url = f"{storage_base_url.rstrip('/')}/v1/storage/{spec.bucket}/{spec.key}"
+            headers = {"X-Request-ID": request_id, "Content-Type": "application/json"}
+            if storage_bearer_token:
+                headers["Authorization"] = f"Bearer {storage_bearer_token}"
+            if storage_roles_header:
+                headers["X-Storage-Roles"] = storage_roles_header
+            r = await httpx_client.put(
+                url,
+                json={"value": val, "content_type": spec.content_type},
+                headers=headers,
+            )
+            if r.status_code >= 400:
+                detail = r.text
+                try:
+                    detail = r.json().get("detail", detail)
+                except Exception:
+                    pass
+                raise RuntimeError(f"storage_write step {step.id!r} failed: {detail}")
+            data = r.json()
+            out_value = json.dumps(data, ensure_ascii=False)
+            outputs[step.id] = out_value
+            if spec.write_context_key:
+                context[spec.write_context_key] = out_value
+            if st:
+                st.record_output(out_value)
+                collector.add_step(st.finish(ok=True))
+            trace.append({"step": step.id, "type": "storage_write", "ok": True})
+            return out_value
         else:
             raise RuntimeError(f"unsupported step type: {type(step)!r}")
 

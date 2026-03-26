@@ -26,6 +26,7 @@ STATUS_PROBE_TIMEOUT = float(os.environ.get("STATUS_PROBE_TIMEOUT_SECONDS", "3")
 EGRESS_HTTP_URL = os.environ.get("EGRESS_HTTP_URL", "").rstrip("/")
 EGRESS_FTP_URL = os.environ.get("EGRESS_FTP_URL", "").rstrip("/")
 EGRESS_SSH_URL = os.environ.get("EGRESS_SSH_URL", "").rstrip("/")
+EGRESS_RABBITMQ_URL = os.environ.get("EGRESS_RABBITMQ_URL", "").rstrip("/")
 GITLAB_PIPELINE_URL = os.environ.get("GITLAB_PIPELINE_URL", "").strip()
 GITLAB_PROJECT_URL = os.environ.get("GITLAB_PROJECT_URL", "").strip()
 
@@ -123,6 +124,8 @@ async def aggregate_status() -> dict[str, Any]:
             tasks.append(_probe_service(client, "egress_ftp", EGRESS_FTP_URL))
         if EGRESS_SSH_URL:
             tasks.append(_probe_service(client, "egress_ssh", EGRESS_SSH_URL))
+        if EGRESS_RABBITMQ_URL:
+            tasks.append(_probe_service(client, "egress_rabbitmq", EGRESS_RABBITMQ_URL))
 
         if tasks:
             results = await asyncio.gather(*tasks)
@@ -153,6 +156,11 @@ async def aggregate_status() -> dict[str, Any]:
         services.setdefault(
             "egress_ssh",
             {"skipped": True, "reason": "EGRESS_SSH_URL not set on gateway"},
+        )
+    if not EGRESS_RABBITMQ_URL:
+        services.setdefault(
+            "egress_rabbitmq",
+            {"skipped": True, "reason": "EGRESS_RABBITMQ_URL not set on gateway"},
         )
 
     active = [s for s in services.values() if not s.get("skipped")]

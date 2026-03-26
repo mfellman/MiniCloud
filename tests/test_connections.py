@@ -44,3 +44,5 @@ def test_load_connections_example():
     reg = load_connections(d)
     assert "httpbin_example" in reg
     assert getattr(reg["httpbin_example"], "base_url") == "https://httpbin.org"
+    assert "rabbitmq_events" in reg
+    assert getattr(reg["rabbitmq_events"], "exchange") == "minicloud.events"

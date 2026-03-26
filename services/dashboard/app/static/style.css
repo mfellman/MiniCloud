@@ -47,6 +47,63 @@ body {
 
 #app { display: flex; flex-direction: column; height: 100vh; }
 
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(21, 94, 239, 0.15), transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(122, 61, 224, 0.12), transparent 45%),
+    var(--bg);
+}
+
+.auth-card {
+  width: min(420px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
+}
+
+.auth-card h1 {
+  font-size: 22px;
+  margin-bottom: 6px;
+}
+
+.auth-card p {
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.auth-form-row {
+  margin-bottom: 10px;
+}
+
+.auth-form-row input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.auth-status {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.auth-status.error {
+  color: var(--red);
+}
+
 /* ----- Top bar ----- */
 .topbar {
   display: flex;

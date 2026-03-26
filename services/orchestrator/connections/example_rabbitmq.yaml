@@ -1,0 +1,19 @@
+# Voorbeeld: herbruikbare RabbitMQ topic connection.
+# Gebruik in workflow-stap:
+#   connection: rabbitmq_events
+#   rabbitmq:
+#     message_from: previous
+#     property_refs:
+#       Domain: context:domain
+#       Service: context:service
+#       Action: context:action
+#       Version: context:version
+name: rabbitmq_events
+type: rabbitmq
+url: amqp://guest:guest@rabbitmq:5672/
+exchange: minicloud.events
+exchange_type: topic
+# Optioneel vaste fallback-routing-key
+# routing_key: integration.default.event.1
+# Optioneel extra OAuth-scope naast minicloud:egress:rabbitmq
+# oauth_scope: minicloud:connection:rabbitmq_events

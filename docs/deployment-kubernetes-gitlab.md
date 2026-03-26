@@ -2,7 +2,7 @@
 
 This guide describes how to run the **entire** MiniCloud stack on a Kubernetes cluster using images built and stored in the **GitLab Container Registry** (typically via the included [`.gitlab-ci.yml`](../.gitlab-ci.yml)).
 
-For cluster concepts (ConfigMaps, Ingress, `local-kind.sh`), see [Kubernetes (in depth)](kubernetes.md). For GitLab project setup and CI overview, see [GitLab (repo + CI + registry)](gitlab.md).
+For cluster concepts (ConfigMaps, Ingress, `local-kind.sh`), see [Kubernetes (in depth)](kubernetes.md). For GitLab project setup and CI overview, see [GitLab (repo + CI + registry)](gitlab.md). For deploying and updating workflows and connections without cluster apply, see [Workflow deployment](workflow-deployment.md).
 
 ---
 

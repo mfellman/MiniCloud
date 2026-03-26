@@ -88,6 +88,16 @@ def egress_ssh_app() -> Iterator[FastAPI]:
 
 
 @pytest.fixture
+def egress_rabbitmq_app() -> Iterator[FastAPI]:
+    yield load_fastapi_app("egressServices/rabbitmq")
+
+
+@pytest.fixture
+def dashboard_app() -> Iterator[FastAPI]:
+    yield load_fastapi_app("dashboard")
+
+
+@pytest.fixture
 def orchestrator_workflows_dir() -> Path:
     return REPO_ROOT / "services" / "orchestrator" / "workflows"
 

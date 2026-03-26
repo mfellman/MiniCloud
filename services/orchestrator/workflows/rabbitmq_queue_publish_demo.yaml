@@ -1,0 +1,17 @@
+name: rabbitmq_queue_publish_demo
+group: Integration
+invocation:
+  allow_http: true
+  allow_schedule: false
+steps:
+  - id: publish_queue_demo_message
+    type: rabbitmq_publish
+    connection: rabbitmq_events
+    rabbitmq:
+      message_from: initial
+      routing_key: queue.demo.ingest.1
+      properties:
+        Domain: Queue
+        Service: Demo
+        Action: Ingest
+        Version: "1"

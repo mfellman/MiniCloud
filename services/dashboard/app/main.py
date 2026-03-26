@@ -120,6 +120,26 @@ async def _security_headers_middleware(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def _identity_api_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+    if path in {"/api/auth/login", "/api/auth/logout"}:
+        return await call_next(request)
+
+    token = _extract_identity_token(request)
+    if not token:
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+
+    try:
+        await _identity_request("GET", "/auth/me", token=token)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": "Not authenticated"})
+
+    return await call_next(request)
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------

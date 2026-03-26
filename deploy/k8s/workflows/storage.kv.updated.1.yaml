@@ -1,0 +1,12 @@
+name: storage.kv.updated.1
+group: Storage
+invocation:
+  allow_http: false
+  allow_schedule: true
+steps:
+  - id: capture_storage_event
+    type: storage_write
+    storage:
+      bucket: demo
+      key: subscribers/storage_event_last
+      value_from: initial

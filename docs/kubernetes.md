@@ -15,6 +15,8 @@ This document describes the Kubernetes artefacts in [`deploy/k8s/`](../deploy/k8
 | Deployment + Service `dashboard` | `dashboard-deployment.yaml`, `dashboard-service.yaml` | Web GUI for trace/run inspection; reads data from orchestrator APIs. |
 | Deployment + Service `transformers` | `transformers-deployment.yaml`, `transformers-service.yaml` | XSLT, xml2json, json2xml, Liquid. |
 | Deployment + Service `egress-http`, `egress-ftp`, `egress-ssh` | `egress-*-deployment.yaml`, `egress-*-service.yaml` | Outbound HTTP, FTP/FTPS, SSH/SFTP. |
+| Deployment + Service `egress-rabbitmq` | `egress-rabbitmq-deployment.yaml`, `egress-rabbitmq-service.yaml` | Outbound RabbitMQ publish endpoint for workflow `rabbitmq_publish` steps. |
+| PVC + Deployment + Service `rabbitmq` | `rabbitmq-pvc.yaml`, `rabbitmq-deployment.yaml`, `rabbitmq-service.yaml` | In-cluster RabbitMQ broker for topic pub/sub and optional workflow triggers. |
 | Ingress `gateway` | `ingress.yaml` | Optional; requires an **Ingress Controller** (e.g. nginx). |
 
 DNS within the same namespace: services reachable as `http://<service-name>:8080` (port as defined on the Service).
@@ -43,6 +45,7 @@ Deployments use for example:
 - `minicloud/egress-http:latest`
 - `minicloud/egress-ftp:latest`
 - `minicloud/egress-ssh:latest`
+- `minicloud/egress-rabbitmq:latest`
 
 `imagePullPolicy: IfNotPresent` suits **local clusters** (kind/minikube) where you build and load images locally.
 
@@ -108,6 +111,19 @@ See **[Persistent Storage met Longhorn](persistent-storage-longhorn.md)** for a 
 - For local debugging (direct XSLT via gateway), unset `GATEWAY_ORCHESTRATION_ONLY` and set `TRANSFORMERS_URL` again (see [README – Gateway env](../README.md#gateway)).
 - Consider **NetworkPolicy**: gateway → orchestrator only; orchestrator → transformers and egress only; deny ingress from outside namespaces to internal Services.
 - **egress-http** supports **`HTTP_EGRESS_ALLOWED_HOSTS`** to restrict outbound HTTP hosts (see [README – environment variables](../README.md#environment-variables)).
+- RabbitMQ management (`rabbitmq:15672`) should stay cluster-internal in production; expose only via controlled admin access.
+
+---
+
+## 10. Bring Your Own RabbitMQ
+
+Use the detailed runbook in [RabbitMQ on Kubernetes](rabbitmq-kubernetes.md) to:
+
+- replace default credentials with Kubernetes Secrets,
+- size and tune persistent storage,
+- enable topic exchange + property-based pub/sub conventions,
+- configure dead-lettering, retries, and observability,
+- connect orchestrator trigger consumers safely.
 
 ---
 

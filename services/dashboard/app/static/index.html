@@ -7,6 +7,22 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<div id="authGate" class="auth-gate hidden">
+  <div class="auth-card">
+    <h1>MiniCloud Login</h1>
+    <p>Sign in to access the dashboard.</p>
+    <div class="auth-form-row">
+      <input id="authLoginUsername" type="text" placeholder="username" autocomplete="username" />
+    </div>
+    <div class="auth-form-row">
+      <input id="authLoginPassword" type="password" placeholder="password" autocomplete="current-password" />
+    </div>
+    <div class="auth-form-row">
+      <button class="btn btn-primary" id="btnAuthLogin">Sign in</button>
+    </div>
+    <div id="authGateStatus" class="auth-status">Use default users: admin/admin, operator/operator, viewer/viewer.</div>
+  </div>
+</div>
 <div id="app">
   <!-- Top bar -->
   <header class="topbar">

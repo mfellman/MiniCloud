@@ -51,6 +51,7 @@ let iamUsers = [];
 let iamPermissions = [];
 let selectedIamUser = null;
 let selectedIamUserPermissions = [];
+let authGateBound = false;
 const STORAGE_PAGE_SIZE = 50;
 const DESIGN_PRESET_KEY_PREFIX = "minicloud.designPresets.";
 const THEME_PREF_KEY = "minicloud.dashboardTheme";
@@ -104,6 +105,11 @@ initTheme();
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
   initThemeSelector();
+  const authenticated = await ensureAuthenticatedGate();
+  if (!authenticated) {
+    return;
+  }
+
   await loadAuthSession();
   await loadWorkflows();
   document.getElementById("connStatus").textContent = "Connected";
@@ -137,6 +143,70 @@ document.addEventListener("DOMContentLoaded", async () => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 });
+
+function showAuthGate(message = "") {
+  const gate = document.getElementById("authGate");
+  const status = document.getElementById("authGateStatus");
+  gate.classList.remove("hidden");
+  if (message) {
+    status.textContent = message;
+    status.classList.add("error");
+  } else {
+    status.textContent = "Use default users: admin/admin, operator/operator, viewer/viewer.";
+    status.classList.remove("error");
+  }
+}
+
+function hideAuthGate() {
+  const gate = document.getElementById("authGate");
+  gate.classList.add("hidden");
+}
+
+function bindAuthGateHandlers() {
+  if (authGateBound) return;
+  authGateBound = true;
+
+  const loginBtn = document.getElementById("btnAuthLogin");
+  const usernameEl = document.getElementById("authLoginUsername");
+  const passwordEl = document.getElementById("authLoginPassword");
+
+  const doLogin = async () => {
+    const username = (usernameEl.value || "").trim();
+    const password = (passwordEl.value || "").trim();
+    if (!username || !password) {
+      showAuthGate("Username and password are required.");
+      return;
+    }
+    try {
+      await apiRequest("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      window.location.reload();
+    } catch (e) {
+      showAuthGate(`Login failed: ${e.message || e}`);
+    }
+  };
+
+  loginBtn.addEventListener("click", doLogin);
+  passwordEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      doLogin();
+    }
+  });
+}
+
+async function ensureAuthenticatedGate() {
+  bindAuthGateHandlers();
+  await loadIdentitySession();
+  if (identitySession.authenticated) {
+    hideAuthGate();
+    return true;
+  }
+  showAuthGate();
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Sidebar: grouped workflow tree

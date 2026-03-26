@@ -1,0 +1,19 @@
+# Demo workflow: publish incoming payload to RabbitMQ with fixed business properties.
+# Trigger from dashboard via HTTP run.
+name: rabbitmq_publish_demo
+group: Integration
+invocation:
+  allow_http: true
+  allow_schedule: false
+steps:
+  - id: publish_test_message
+    type: rabbitmq_publish
+    connection: rabbitmq_events
+    rabbitmq:
+      message_from: initial
+      routing_key: test.messageservice.publish.0.1
+      properties:
+        Domain: Test
+        Service: MessageService
+        Action: Publish
+        Version: "0.1"

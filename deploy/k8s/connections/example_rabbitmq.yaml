@@ -1,0 +1,5 @@
+name: rabbitmq_events
+type: rabbitmq
+url: amqp://guest:guest@rabbitmq:5672/
+exchange: minicloud.events
+exchange_type: topic
