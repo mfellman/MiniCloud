@@ -7,6 +7,22 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<div id="authGate" class="auth-gate hidden">
+  <div class="auth-card">
+    <h1>MiniCloud Login</h1>
+    <p>Sign in to access the dashboard.</p>
+    <div class="auth-form-row">
+      <input id="authLoginUsername" type="text" placeholder="username" autocomplete="username" />
+    </div>
+    <div class="auth-form-row">
+      <input id="authLoginPassword" type="password" placeholder="password" autocomplete="current-password" />
+    </div>
+    <div class="auth-form-row">
+      <button class="btn btn-primary" id="btnAuthLogin">Sign in</button>
+    </div>
+    <div id="authGateStatus" class="auth-status">Use default users: admin/admin, operator/operator, viewer/viewer.</div>
+  </div>
+</div>
 <div id="app">
   <!-- Top bar -->
   <header class="topbar">
@@ -15,8 +31,17 @@
       <span>MiniCloud</span>
     </div>
     <div class="topbar-right">
+      <div class="theme-switch">
+        <label for="themeSelect" class="visually-hidden">Theme</label>
+        <select id="themeSelect" class="topbar-theme-select" aria-label="Theme selection">
+          <option value="auto">Auto</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
       <nav class="breadcrumb" id="breadcrumb"></nav>
       <div class="topbar-status" id="connStatus">Connecting&#8230;</div>
+      <button class="btn hidden" id="btnSignOut">Sign out</button>
     </div>
   </header>
 
@@ -26,6 +51,20 @@
       <div class="sidebar-section">
         <h3>Workflows</h3>
         <ul id="workflowTree"></ul>
+      </div>
+      <div class="sidebar-section">
+        <h3>Broker</h3>
+        <ul class="nav-list">
+          <li class="nav-item" id="navRabbitMQ">RabbitMQ</li>
+          <li class="nav-item" id="navStorage">Storage</li>
+          <li class="nav-item" id="navAccess">Access</li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h3>Admin</h3>
+        <ul class="nav-list">
+          <li class="nav-item" id="navScheduleTemplates">Schedule Templates</li>
+        </ul>
       </div>
     </aside>
 
@@ -46,6 +85,8 @@
           </div>
           <div class="wf-detail-actions">
             <button class="btn btn-primary" id="btnViewDesign">&#9654; View Design</button>
+            <button class="btn" id="btnScheduleWorkflow">⏱ Schedule</button>
+            <button class="btn" id="btnViewSchedules">📋 Schedules</button>
             <button class="btn" id="btnRefreshRuns">&#x21bb; Refresh</button>
           </div>
         </div>
@@ -83,6 +124,226 @@
         <div class="hidden run-error" id="runError"></div>
         <div class="graph-container" id="runGraph"></div>
       </div>
+
+      <!-- RabbitMQ view -->
+      <div class="hidden" id="rabbitPanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2>RabbitMQ</h2>
+            <div class="wf-group-label" id="rabbitSubtitle">Inspect broker queues, exchanges and messages.</div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn" id="btnRabbitRefresh">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <div class="rabbit-status" id="rabbitStatus"></div>
+
+        <div class="stat-cards" id="rabbitOverviewCards"></div>
+
+        <div class="rabbit-grid">
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Queues</h3>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Messages</th>
+                    <th>Consumers</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="rabbitQueuesBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Exchanges</h3>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Durable</th>
+                  </tr>
+                </thead>
+                <tbody id="rabbitExchangesBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="rabbit-card rabbit-peek-card">
+          <div class="rabbit-card-header">
+            <h3>Peek Messages</h3>
+          </div>
+          <div class="rabbit-peek-controls">
+            <input id="rabbitPeekQueue" type="text" placeholder="queue name" />
+            <input id="rabbitPeekCount" type="number" value="10" min="1" max="100" />
+            <button class="btn btn-primary" id="btnRabbitPeek">Peek</button>
+          </div>
+          <pre id="rabbitPeekOutput" class="code-block">Select a queue and click Peek.</pre>
+        </section>
+      </div>
+
+      <!-- Storage view -->
+      <div class="hidden" id="storagePanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2>Storage Browser</h2>
+            <div class="wf-group-label">Browse buckets and keys in the storage service.</div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn" id="btnStorageRefresh">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <div class="rabbit-status" id="storageStatus"></div>
+
+        <div class="rabbit-grid">
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Buckets</h3>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Bucket</th>
+                  </tr>
+                </thead>
+                <tbody id="storageBucketsBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Keys</h3>
+            </div>
+            <div class="rabbit-peek-controls">
+              <input id="storagePrefix" type="text" placeholder="prefix (optional)" />
+              <input id="storageKeyFilter" type="text" placeholder="filter in loaded keys" />
+              <button class="btn" id="btnStorageLoadKeys">Load</button>
+            </div>
+            <div class="storage-pager" id="storagePager">
+              <button class="btn" id="btnStoragePrevPage">Prev</button>
+              <span id="storagePageInfo">Page 1 / 1</span>
+              <button class="btn" id="btnStorageNextPage">Next</button>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                  </tr>
+                </thead>
+                <tbody id="storageKeysBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="rabbit-card rabbit-peek-card">
+          <div class="rabbit-card-header">
+            <h3>Object</h3>
+            <button class="btn" id="btnStorageDownload">Download</button>
+          </div>
+          <pre id="storageObjectOutput" class="code-block">Select a key to inspect its object.</pre>
+        </section>
+      </div>
+
+      <!-- Access / IAM view -->
+      <div class="hidden" id="accessPanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2>Access Control</h2>
+            <div class="wf-group-label">Authenticate and manage workflow run/re-trigger permissions.</div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn" id="btnAccessRefresh">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <div class="rabbit-status" id="accessStatus"></div>
+
+        <section class="rabbit-card" id="accessLoginCard">
+          <div class="rabbit-card-header">
+            <h3>Sign In</h3>
+          </div>
+          <div class="access-login-row">
+            <input id="accessLoginUsername" type="text" placeholder="username" />
+            <input id="accessLoginPassword" type="password" placeholder="password" />
+            <button class="btn btn-primary" id="btnAccessLogin">Sign in</button>
+          </div>
+        </section>
+
+        <section class="rabbit-card hidden" id="accessAdminCard">
+          <div class="rabbit-card-header">
+            <h3>User Rights</h3>
+          </div>
+          <div class="access-admin-grid">
+            <div>
+              <label for="accessUserSelect">User</label>
+              <select id="accessUserSelect"></select>
+            </div>
+            <div>
+              <label for="accessWorkflowSelect">Workflow</label>
+              <select id="accessWorkflowSelect"></select>
+            </div>
+          </div>
+          <div class="access-rights-row">
+            <label><input id="permRunAny" type="checkbox" /> run any workflow</label>
+            <label><input id="permRetriggerAny" type="checkbox" /> re-trigger any workflow</label>
+            <label><input id="permRunSelected" type="checkbox" /> run selected workflow</label>
+            <label><input id="permRetriggerSelected" type="checkbox" /> re-trigger selected workflow</label>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn btn-primary" id="btnAccessSave">Save permissions</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Schedule Templates Admin Panel -->
+      <div class="hidden" id="scheduleTemplatesPanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2>Schedule Templates</h2>
+            <div class="wf-group-label">Manage reusable cron schedule templates (admin only).</div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn btn-primary" id="btnCreateTemplate">+ New Template</button>
+            <button class="btn" id="btnTemplatesRefresh">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <div class="rabbit-status" id="templatesStatus"></div>
+
+        <section class="rabbit-card">
+          <div class="rabbit-card-header">
+            <h3>Templates</h3>
+          </div>
+          <div id="templatesEmpty" style="padding:20px;text-align:center;color:var(--text-muted);">No templates created yet.</div>
+          <table class="run-table" id="templatesListTable" style="display:none;width:100%;">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Cron Expression</th>
+                <th>Description</th>
+                <th style="width:100px;"></th>
+              </tr>
+            </thead>
+            <tbody id="templatesListBody"></tbody>
+          </table>
+        </section>
+      </div>
     </main>
 
     <!-- Right detail panel (step input/output) -->
@@ -108,6 +369,130 @@
         </div>
       </div>
     </aside>
+  </div>
+
+  <!-- Rerun Modal -->
+  <div class="rerun-modal hidden" id="rerunModal">
+    <div class="rerun-modal-backdrop" id="rerunModalBackdrop"></div>
+    <div class="rerun-modal-content">
+      <div class="rerun-modal-header">
+        <h2>Re-run Workflow</h2>
+        <button class="btn-close" id="rerunModalClose">&times;</button>
+      </div>
+      <div class="rerun-modal-body">
+        <p id="rerunWorkflowName" style="color:var(--text-muted);font-size:14px;margin-bottom:12px"></p>
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Payload (editable)
+        </label>
+        <textarea id="rerunPayload" class="rerun-payload" placeholder='{"xml": "..."}'></textarea>
+        <div id="rerunError" class="rerun-error hidden"></div>
+      </div>
+      <div class="rerun-modal-footer">
+        <button class="btn" id="rerunModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="rerunModalConfirm">Re-run</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule Modal -->
+  <div class="rerun-modal hidden" id="scheduleModal">
+    <div class="rerun-modal-backdrop" id="scheduleModalBackdrop"></div>
+    <div class="rerun-modal-content">
+      <div class="rerun-modal-header">
+        <h2>Schedule Workflow</h2>
+        <button class="btn-close" id="scheduleModalClose">&times;</button>
+      </div>
+      <div class="rerun-modal-body">
+        <p id="scheduleWorkflowName" style="color:var(--text-muted);font-size:14px;margin-bottom:12px"></p>
+        
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Schedule Template (optional)
+        </label>
+        <select id="scheduleTemplateSelect" class="rerun-payload" style="width:100%;padding:8px;margin-bottom:16px;">
+          <option value="">-- Use custom cron expression --</option>
+        </select>
+
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Cron Expression
+        </label>
+        <input id="scheduleCronExpression" class="rerun-payload" type="text" placeholder="0 0 * * * (every midnight)" style="font-family:monospace;padding:8px;width:100%;box-sizing:border-box;margin-bottom:16px"/>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px">
+          Format: minute hour day month weekday (e.g., <code style="background:var(--bg-alt);padding:2px 4px;">0 0 * * *</code> = daily at midnight)
+        </div>
+
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Payload (XML)
+        </label>
+        <textarea id="schedulePayload" class="rerun-payload" placeholder="<root/>" style="min-height:120px;"></textarea>
+        
+        <div id="scheduleError" class="rerun-error hidden"></div>
+      </div>
+      <div class="rerun-modal-footer">
+        <button class="btn" id="scheduleModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="scheduleModalConfirm">Create Schedule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Template Create/Edit Modal -->
+  <div class="rerun-modal hidden" id="templateModal">
+    <div class="rerun-modal-backdrop" id="templateModalBackdrop"></div>
+    <div class="rerun-modal-content">
+      <div class="rerun-modal-header">
+        <h2 id="templateModalTitle">Create Schedule Template</h2>
+        <button class="btn-close" id="templateModalClose">&times;</button>
+      </div>
+      <div class="rerun-modal-body">
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Name (e.g., 'every-midnight')
+        </label>
+        <input id="templateName" class="rerun-payload" type="text" placeholder="every-midnight" style="width:100%;padding:8px;margin-bottom:16px;"/>
+
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Cron Expression
+        </label>
+        <input id="templateCronExpression" class="rerun-payload" type="text" placeholder="0 0 * * *" style="font-family:monospace;padding:8px;width:100%;box-sizing:border-box;margin-bottom:16px;"/>
+
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Description
+        </label>
+        <textarea id="templateDescription" class="rerun-payload" placeholder="Run daily at midnight" style="min-height:80px;margin-bottom:16px;"></textarea>
+
+        <div id="templateError" class="rerun-error hidden"></div>
+      </div>
+      <div class="rerun-modal-footer">
+        <button class="btn" id="templateModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="templateModalConfirm">Save Template</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedules List Modal (view/delete) -->
+  <div class="rerun-modal hidden" id="schedulesListModal">
+    <div class="rerun-modal-backdrop" id="schedulesListModalBackdrop"></div>
+    <div class="rerun-modal-content" style="max-width:700px;">
+      <div class="rerun-modal-header">
+        <h2>Active Schedules</h2>
+        <button class="btn-close" id="schedulesListModalClose">&times;</button>
+      </div>
+      <div class="rerun-modal-body">
+        <div id="schedulesListEmpty" style="padding:20px;text-align:center;color:var(--text-muted);">No schedules created yet.</div>
+        <table class="run-table" id="schedulesListTable" style="display:none;width:100%;">
+          <thead>
+            <tr>
+              <th>Workflow</th>
+              <th>Cron</th>
+              <th>Next Run</th>
+              <th style="width:80px;"></th>
+            </tr>
+          </thead>
+          <tbody id="schedulesListBody"></tbody>
+        </table>
+      </div>
+      <div class="rerun-modal-footer">
+        <button class="btn" id="schedulesListModalClose2">Close</button>
+      </div>
+    </div>
   </div>
 </div>
 <script src="/static/app.js"></script>

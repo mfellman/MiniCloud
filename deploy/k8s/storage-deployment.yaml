@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage
+  labels:
+    app.kubernetes.io/name: minicloud
+    app.kubernetes.io/component: storage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: storage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: storage
+        app.kubernetes.io/component: storage
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: storage
+          image: minicloud/storage:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: STORAGE_DATA_DIR
+              value: /app/data
+            # ACL profile quick guide:
+            # Dev:   READ=orchestrator,developer  WRITE=orchestrator,developer
+            # Stage: READ=orchestrator,qa,release-reader  WRITE=orchestrator,release-writer
+            # Prod:  READ=orchestrator,security-reader  WRITE=orchestrator
+            # Strict mode: set STORAGE_DEFAULT_ROLE to empty and require explicit X-Storage-Roles.
+            - name: STORAGE_ACL_ENABLED
+              value: "true"
+            - name: STORAGE_DEFAULT_ROLE
+              value: orchestrator
+            - name: STORAGE_ACL_READ_ROLES
+              value: orchestrator
+            - name: STORAGE_ACL_WRITE_ROLES
+              value: orchestrator
+            - name: STORAGE_EVENT_ENABLED
+              value: "true"
+            - name: STORAGE_EVENT_EGRESS_URL
+              value: http://egress-rabbitmq:8080/publish
+            - name: STORAGE_EVENT_DOMAIN
+              value: Storage
+            - name: STORAGE_EVENT_SERVICE
+              value: KV
+            - name: STORAGE_EVENT_ACTION
+              value: Updated
+            - name: STORAGE_EVENT_VERSION
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: storage-data
+              mountPath: /app/data
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: storage-data
+          persistentVolumeClaim:
+            claimName: storage-data

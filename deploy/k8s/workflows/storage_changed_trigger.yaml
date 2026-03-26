@@ -1,0 +1,21 @@
+name: storage_changed_trigger
+group: Storage
+invocation:
+  allow_http: false
+  allow_schedule: true
+steps:
+  - id: extract_bucket
+    type: context_extract_json
+    context_key: bucket
+    input_from: initial
+    json_path: /bucket
+  - id: extract_key
+    type: context_extract_json
+    context_key: key
+    input_from: initial
+    json_path: /key
+  - id: render_summary
+    type: liquid
+    input_from: initial
+    template: |
+      storage.changed processed: bucket={{ bucket }} key={{ key }}

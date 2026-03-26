@@ -2,6 +2,7 @@
 # Images: minicloud/gateway, transformers, egress-http/ftp/ssh, orchestrator (see local-kind.sh)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: minicloud
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
@@ -11,10 +12,20 @@ configMapGenerator:
       - workflows/loop_demo.yaml
       - workflows/minimal.yaml
       - workflows/schedule_only_demo.yaml
+      - workflows/storage_demo.yaml
+      - workflows/storage_write_demo.yaml
+      - workflows/storage_write_read_demo.yaml
+      - workflows/storage_changed_trigger.yaml
+      - workflows/storage.kv.updated.1.yaml
       - workflows/transform_demo.yaml
+      - workflows/rabbitmq_publish_demo.yaml
+      - workflows/rabbitmq_queue_publish_demo.yaml
+      - workflows/queue.demo.ingest.1.yaml
+      - workflows/test.messageservice.publish.0.1.yaml
   - name: minicloud-connections
     files:
       - connections/example_http.yaml
+      - connections/example_rabbitmq.yaml
 resources:
   - configmap-templates.yaml
   - egress-http-deployment.yaml
@@ -23,10 +34,23 @@ resources:
   - egress-ftp-service.yaml
   - egress-ssh-deployment.yaml
   - egress-ssh-service.yaml
+  - egress-rabbitmq-deployment.yaml
+  - egress-rabbitmq-service.yaml
+  - rabbitmq-pvc.yaml
+  - rabbitmq-deployment.yaml
+  - rabbitmq-service.yaml
   - transformers-deployment.yaml
   - transformers-service.yaml
+  - storage-pvc.yaml
+  - storage-deployment.yaml
+  - storage-service.yaml
+  - identity-deployment.yaml
+  - identity-service.yaml
   - orchestrator-deployment.yaml
+  - orchestrator-queue-subscriber-deployment.yaml
   - orchestrator-service.yaml
+  - scheduler-deployment.yaml
+  - scheduler-service.yaml
   - gateway-deployment.yaml
   - gateway-service.yaml
   - dashboard-deployment.yaml

@@ -1,4 +1,30 @@
 services:
+  identity:
+    build:
+      context: ./services/identity
+      dockerfile: Dockerfile
+    image: minicloud/identity:latest
+    ports:
+      - "8088:8080"
+    environment:
+      IDENTITY_DATA_DIR: /app/data
+      IDENTITY_JWT_SECRET: change-me-minicloud-identity
+      IDENTITY_JWT_ISSUER: minicloud-identity
+      IDENTITY_JWT_AUDIENCE: minicloud
+    volumes:
+      - identity-data:/app/data
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
   egress-http:
     build:
       context: ./services/egressServices/http
@@ -23,6 +49,20 @@ services:
     ports:
       - "8085:8080"
 
+  egress-rabbitmq:
+    build:
+      context: ./services/egressServices/rabbitmq
+      dockerfile: Dockerfile
+    image: minicloud/egress-rabbitmq:latest
+    ports:
+      - "8087:8080"
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: minicloud.events
+      RABBITMQ_EXCHANGE_TYPE: topic
+    depends_on:
+      - rabbitmq
+
   transformers:
     build:
       context: ./services/transformers
@@ -43,6 +83,21 @@ services:
       EGRESS_HTTP_URL: http://egress-http:8080
       EGRESS_FTP_URL: http://egress-ftp:8080
       EGRESS_SSH_URL: http://egress-ssh:8080
+      EGRESS_RABBITMQ_URL: http://egress-rabbitmq:8080
+      RABBITMQ_TRIGGER_ENABLED: "true"
+      RABBITMQ_TRIGGER_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_TRIGGER_EXCHANGE: minicloud.events
+      RABBITMQ_TRIGGER_EXCHANGE_TYPE: topic
+      RABBITMQ_TRIGGER_QUEUE: orchestrator-storage-changed
+      RABBITMQ_TRIGGER_BINDING_KEY: storage.kv.updated.*
+      RABBITMQ_TRIGGER_STORAGE_CHANGED_WORKFLOW: storage_changed_trigger
+      RABBITMQ_TRIGGER_STORAGE_BUCKET_ALLOW: "*"
+      RABBITMQ_TRIGGER_STORAGE_KEY_ALLOW: "*"
+      STORAGE_SERVICE_URL: http://storage:8080
+      OAUTH2_ENABLED: "true"
+      OAUTH2_JWT_SHARED_SECRET: change-me-minicloud-identity
+      OAUTH2_ISSUER: minicloud-identity
+      OAUTH2_AUDIENCE: minicloud
       WORKFLOWS_DIR: /app/workflows
       CONNECTIONS_DIR: /app/connections
       TRACES_DIR: /app/traces
@@ -54,7 +109,34 @@ services:
       - egress-http
       - egress-ftp
       - egress-ssh
+      - egress-rabbitmq
       - transformers
+      - storage
+      - identity
+
+  storage:
+    build:
+      context: ./services/storage
+      dockerfile: Dockerfile
+    image: minicloud/storage:latest
+    ports:
+      - "8086:8080"
+    environment:
+      STORAGE_DATA_DIR: /app/data
+      STORAGE_ACL_ENABLED: "true"
+      STORAGE_DEFAULT_ROLE: orchestrator
+      STORAGE_ACL_READ_ROLES: orchestrator
+      STORAGE_ACL_WRITE_ROLES: orchestrator
+      STORAGE_EVENT_ENABLED: "true"
+      STORAGE_EVENT_EGRESS_URL: http://egress-rabbitmq:8080/publish
+      STORAGE_EVENT_DOMAIN: Storage
+      STORAGE_EVENT_SERVICE: KV
+      STORAGE_EVENT_ACTION: Updated
+      STORAGE_EVENT_VERSION: "1"
+    volumes:
+      - storage-data:/app/data
+    depends_on:
+      - egress-rabbitmq
 
   gateway:
     build:
@@ -69,12 +151,14 @@ services:
       EGRESS_HTTP_URL: http://egress-http:8080
       EGRESS_FTP_URL: http://egress-ftp:8080
       EGRESS_SSH_URL: http://egress-ssh:8080
+      EGRESS_RABBITMQ_URL: http://egress-rabbitmq:8080
     depends_on:
       - transformers
       - orchestrator
       - egress-http
       - egress-ftp
       - egress-ssh
+      - egress-rabbitmq
 
   dashboard:
     build:
@@ -84,9 +168,28 @@ services:
     ports:
       - "8090:8080"
     environment:
+      GATEWAY_URL: http://gateway:8080
       ORCHESTRATOR_URL: http://orchestrator:8080
+      STORAGE_SERVICE_URL: http://storage:8080
+      STORAGE_ROLES: orchestrator
+      IDENTITY_URL: http://identity:8080
+      # Optional dashboard basic auth
+      DASH_AUTH_ENABLED: "false"
+      # DASH_AUTH_USERNAME: admin
+      # DASH_AUTH_PASSWORD: change-me
+      DASH_RABBITMQ_INSPECT_ENABLED: "true"
+      RABBITMQ_MANAGEMENT_URL: http://rabbitmq:15672/api
+      RABBITMQ_MANAGEMENT_USER: guest
+      RABBITMQ_MANAGEMENT_PASSWORD: guest
+      RABBITMQ_MANAGEMENT_VHOST: "/"
     depends_on:
       - orchestrator
+      - rabbitmq
+      - storage
+      - identity
 
 volumes:
   orchestrator-traces:
+  storage-data:
+  rabbitmq-data:
+  identity-data:

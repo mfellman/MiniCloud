@@ -5,7 +5,25 @@ name: demo
 group: Demo
 invocation:
   allow_http: true
-  allow_schedule: false
+  allow_schedule: true
+
+example_payloads:
+  - name: simple-order
+    payload:
+      xml: |
+        <order>
+          <id>ORD-001</id>
+          <customer>John Doe</customer>
+          <total>99.99</total>
+        </order>
+  - name: inventory-update
+    payload:
+      xml: |
+        <inventory>
+          <sku>PROD-123</sku>
+          <quantity>42</quantity>
+          <warehouse>NYC</warehouse>
+        </inventory>
 steps:
   - id: to_echo
     type: xslt

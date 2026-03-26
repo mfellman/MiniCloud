@@ -228,3 +228,125 @@ steps:
         )
 
     assert 'id="z"' in final
+
+
+@pytest.mark.asyncio
+async def test_storage_write_then_read_steps(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_DATA_DIR", str(tmp_path / "storage-data"))
+    wr = load_workflow_runner_standalone()
+    raw = yaml.safe_load(
+        """
+name: storage_rw_demo
+steps:
+  - id: put_value
+    type: storage_write
+    storage:
+      bucket: workflows
+      key: sample/key
+      value_from: initial
+      also_variable: write_result
+  - id: read_value
+    type: storage_read
+    storage:
+      bucket: workflows
+      key: sample/key
+      output_field: value
+      also_variable: read_value
+""",
+    )
+    doc = wr.WorkflowDoc.model_validate(raw)
+
+    storage_app = load_fastapi_app("storage")
+    transport = httpx.ASGITransport(app=storage_app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://storage.test",
+    ) as client:
+        final, _out, trace, ctx = await wr.run_workflow(
+            doc,
+            "hello-storage",
+            transformers_base_url="http://unused",
+            egress_http_url="http://unused/call",
+            egress_ftp_url="http://unused/ftp",
+            egress_ssh_url="http://unused/exec",
+            egress_sftp_url="http://unused/sftp",
+            request_id="test-storage-rw",
+            httpx_client=client,
+            storage_base_url="http://storage.test",
+        )
+
+    assert final == "hello-storage"
+    assert ctx["read_value"] == "hello-storage"
+    assert "stored" in ctx["write_result"]
+    assert trace[0]["type"] == "storage_write"
+    assert trace[1]["type"] == "storage_read"
+
+
+@pytest.mark.asyncio
+async def test_storage_steps_acl_requires_role_header(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_DATA_DIR", str(tmp_path / "storage-data"))
+    monkeypatch.setenv("STORAGE_ACL_ENABLED", "true")
+    monkeypatch.setenv("STORAGE_DEFAULT_ROLE", "")
+    monkeypatch.setenv(
+        "STORAGE_ACL_POLICY",
+        '{"default":{"read_roles":[],"write_roles":[]},"buckets":{"secure":{"read_roles":["orchestrator"],"write_roles":["orchestrator"]}}}',
+    )
+
+    wr = load_workflow_runner_standalone()
+    raw = yaml.safe_load(
+        """
+name: storage_acl_demo
+steps:
+  - id: put
+    type: storage_write
+    storage:
+      bucket: secure
+      key: demo/item
+      value_from: initial
+  - id: get
+    type: storage_read
+    storage:
+      bucket: secure
+      key: demo/item
+      output_field: value
+""",
+    )
+    doc = wr.WorkflowDoc.model_validate(raw)
+
+    storage_app = load_fastapi_app("storage")
+    transport = httpx.ASGITransport(app=storage_app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://storage.test",
+    ) as client:
+        with pytest.raises(RuntimeError, match="storage_write step"):
+            await wr.run_workflow(
+                doc,
+                "secret",
+                transformers_base_url="http://unused",
+                egress_http_url="http://unused/call",
+                egress_ftp_url="http://unused/ftp",
+                egress_ssh_url="http://unused/exec",
+                egress_sftp_url="http://unused/sftp",
+                request_id="test-storage-acl-denied",
+                httpx_client=client,
+                storage_base_url="http://storage.test",
+            )
+
+        final, _out, trace, _ctx = await wr.run_workflow(
+            doc,
+            "secret",
+            transformers_base_url="http://unused",
+            egress_http_url="http://unused/call",
+            egress_ftp_url="http://unused/ftp",
+            egress_ssh_url="http://unused/exec",
+            egress_sftp_url="http://unused/sftp",
+            request_id="test-storage-acl-allowed",
+            httpx_client=client,
+            storage_base_url="http://storage.test",
+            storage_roles_header="orchestrator",
+        )
+
+    assert final == "secret"
+    assert trace[0]["type"] == "storage_write"
+    assert trace[1]["type"] == "storage_read"

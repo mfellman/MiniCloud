@@ -1,0 +1,18 @@
+name: storage_write_read_demo
+group: Storage
+invocation:
+  allow_http: true
+  allow_schedule: false
+steps:
+  - id: write_payload
+    type: storage_write
+    storage:
+      bucket: demo
+      key: payloads/write_read_demo_last
+      value_from: initial
+  - id: read_payload
+    type: storage_read
+    storage:
+      bucket: demo
+      key: payloads/write_read_demo_last
+      output_field: value

@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator-queue-subscriber
+  labels:
+    app.kubernetes.io/name: minicloud
+    app.kubernetes.io/component: orchestrator-queue-subscriber
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orchestrator-queue-subscriber
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orchestrator-queue-subscriber
+        app.kubernetes.io/component: orchestrator-queue-subscriber
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: orchestrator-queue-subscriber
+          image: minicloud/orchestrator:latest
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: TRANSFORMERS_URL
+              value: http://transformers:8080
+            - name: EGRESS_HTTP_URL
+              value: http://egress-http:8080
+            - name: EGRESS_HTTP_PATH
+              value: /call
+            - name: EGRESS_FTP_URL
+              value: http://egress-ftp:8080
+            - name: EGRESS_SSH_URL
+              value: http://egress-ssh:8080
+            - name: EGRESS_RABBITMQ_URL
+              value: http://egress-rabbitmq:8080
+            - name: STORAGE_SERVICE_URL
+              value: http://storage:8080
+            - name: WORKFLOWS_DIR
+              value: /app/workflows
+            - name: CONNECTIONS_DIR
+              value: /app/connections
+            - name: TRACES_DIR
+              value: /app/traces
+            - name: TRACES_MAX_RUNS
+              value: "200"
+            - name: RABBITMQ_TRIGGER_ENABLED
+              value: "true"
+            - name: RABBITMQ_TRIGGER_URL
+              value: "amqp://guest:guest@rabbitmq:5672/"
+            - name: RABBITMQ_TRIGGER_EXCHANGE
+              value: "minicloud.events"
+            - name: RABBITMQ_TRIGGER_EXCHANGE_TYPE
+              value: "topic"
+            - name: RABBITMQ_TRIGGER_QUEUE
+              value: "orchestrator-queue-trigger"
+            - name: RABBITMQ_TRIGGER_BINDING_KEY
+              value: "queue.demo.#"
+            - name: RABBITMQ_TRIGGER_WORKFLOW
+              value: "queue.demo.ingest.1"
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: workflows
+              mountPath: /app/workflows
+              readOnly: true
+            - name: connections
+              mountPath: /app/connections
+              readOnly: true
+            - name: traces
+              mountPath: /app/traces
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: workflows
+          configMap:
+            name: minicloud-workflows
+        - name: connections
+          configMap:
+            name: minicloud-connections
+        - name: traces
+          emptyDir: {}

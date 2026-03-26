@@ -1,0 +1,89 @@
+# DEV overlay — één cluster, namespace: minicloud-dev
+#
+# Apply:  kubectl apply -k deploy/k8s/overlays/dev
+# Reload: kubectl exec -n minicloud-dev deploy/orchestrator -- \
+#           curl -s -X POST http://localhost:8080/admin/reload \
+#                -H "X-Reload-Token: <ORCH_RELOAD_TOKEN>"
+#
+# ACL-profiel: dev (orchestrator + developer rol)
+# Image tags:  :dev
+# Secrets:     plain env vars; gebruik in prd: secretKeyRef
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: minicloud-dev
+
+resources:
+  - ../../
+
+images:
+  - name: minicloud/gateway
+    newTag: dev
+  - name: minicloud/orchestrator
+    newTag: dev
+  - name: minicloud/transformers
+    newTag: dev
+  - name: minicloud/storage
+    newTag: dev
+  - name: minicloud/identity
+    newTag: dev
+  - name: minicloud/egress-http
+    newTag: dev
+  - name: minicloud/egress-ftp
+    newTag: dev
+  - name: minicloud/egress-ssh
+    newTag: dev
+  - name: minicloud/dashboard
+    newTag: dev
+
+patches:
+  # Switch orchestrator van ConfigMap-files naar storage service (http)
+  - target:
+      kind: Deployment
+      name: orchestrator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: orchestrator
+      spec:
+        template:
+          spec:
+            containers:
+              - name: orchestrator
+                env:
+                  - name: ORCH_RUNTIME_STORE
+                    value: http
+                  - name: ORCH_STORAGE_BEARER_TOKEN
+                    value: ""
+                  - name: ORCH_RELOAD_TOKEN
+                    value: ""
+
+  # Dev ACL: orchestrator + developer kan lezen en schrijven
+  - target:
+      kind: Deployment
+      name: storage
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: storage
+      spec:
+        template:
+          spec:
+            containers:
+              - name: storage
+                env:
+                  - name: STORAGE_ACL_READ_ROLES
+                    value: orchestrator,developer
+                  - name: STORAGE_ACL_WRITE_ROLES
+                    value: orchestrator,developer
+
+  # Ingress: dev hostname (pas aan naar jouw cluster DNS)
+  - target:
+      kind: Ingress
+      name: gateway
+    patch: |-
+      - op: add
+        path: /spec/rules/0/host
+        value: minicloud-dev.example.com

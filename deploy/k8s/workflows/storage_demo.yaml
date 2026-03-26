@@ -1,0 +1,36 @@
+name: storage_demo
+group: Storage
+invocation:
+  allow_http: true
+  allow_schedule: true
+
+example_payloads:
+  - name: config-data
+    payload:
+      xml: |
+        <config>
+          <setting name="timeout">30</setting>
+          <setting name="retries">3</setting>
+          <setting name="mode">production</setting>
+        </config>
+  - name: cache-entry
+    payload:
+      xml: |
+        <cache>
+          <key>user-profile:12345</key>
+          <data><name>John</name><role>admin</role></data>
+          <ttl>3600</ttl>
+        </cache>
+steps:
+  - id: write_payload
+    type: storage_write
+    storage:
+      bucket: demo
+      key: payloads/last
+      value_from: initial
+  - id: read_payload
+    type: storage_read
+    storage:
+      bucket: demo
+      key: payloads/last
+      output_field: value

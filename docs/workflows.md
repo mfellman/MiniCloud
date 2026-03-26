@@ -2,15 +2,15 @@
 
 This document supplements the [README](../README.md) with details on the workflow model, data between steps, and invocation.
 
-**Author-oriented overview:** if you are writing workflows for the first time, read **[User guide: writing orchestrations](user-guide-orchestrations.md)** first, then use this file as the full reference.
+**Author-oriented overview:** if you are writing workflows for the first time, read **[User guide: writing orchestrations](user-guide-orchestrations.md)** first, then use this file as the full reference. To deploy, update, or delete workflows without restarting the cluster, see **[Workflow deployment](workflow-deployment.md)**.
 
 ---
 
 ## 1. File conventions
 
-- **Location**: in containers the orchestrator reads from `WORKFLOWS_DIR` (default `/app/workflows`).
+- **Location**: in containers the orchestrator reads from `WORKFLOWS_DIR` (default `/app/workflows`), or — when `ORCH_RUNTIME_STORE=http` is set — from the storage service at runtime. See [Workflow deployment](workflow-deployment.md).
 - **Filenames**: `*.yaml` or `*.yml`; the **filename** does not have to match `name:` in the file (but `name` must be unique across all workflows).
-- **Loading**: at **startup** the orchestrator loads all valid files. Changes require a **pod restart** (or new deployment) unless you update workflows via volume/ConfigMap externally and restart the pod.
+- **Loading**: at **startup** the orchestrator loads all valid files. With `ORCH_RUNTIME_STORE=http`, call `POST /admin/reload` to activate a new or updated workflow without any pod restart.
 
 ---
 
@@ -151,6 +151,45 @@ steps:
 
 ---
 
+## 7.1 Step `type: rabbitmq_publish`
+
+Publishes an event message to RabbitMQ via **egress-rabbitmq** (`POST /publish`).
+
+```yaml
+- id: <string>
+  type: rabbitmq_publish
+  connection: rabbitmq_events      # optional, from connections/*.yaml
+  rabbitmq:
+    url: amqp://...                # required when connection is omitted
+    exchange: minicloud.events
+    exchange_type: topic
+    routing_key: sales.orders.created.1   # optional; auto-built from properties if omitted
+    message_from: <ref>            # required
+    properties:                    # static properties
+      Domain: Sales
+      Service: Orders
+      Action: Created
+      Version: "1"
+    property_refs:                 # dynamic properties from refs
+      Domain: context:domain
+      Service: context:service
+      Action: context:action
+      Version: context:version
+    headers:
+      tenant: acme
+    persistent: true
+    content_type: text/plain
+```
+
+Notes:
+
+- `message_from` uses the same ref rules as §11 (`initial`, `previous`, `<step_id>`, `context:<key>`, `var:<key>`).
+- Keep `Domain`, `Service`, `Action`, `Version` as message properties so subscribers can route/filter consistently.
+- If `routing_key` is omitted and these 4 properties exist, egress builds `domain.service.action.version` (lowercase).
+- Step output is the JSON response from egress-rabbitmq.
+
+---
+
 ## 8. Step `type: xml2json`
 
 ```yaml
@@ -191,7 +230,55 @@ steps:
 
 ---
 
-## 10.1 Workflow context (orchestrator runtime map)
+## 10.1 Step `type: storage_read`
+
+Reads a value from the storage service key-value API.
+
+```yaml
+- id: <string>
+  type: storage_read
+  storage:                        # alias: storage_read
+    bucket: <string>
+    key: <string>
+    output_field: value           # optional, default value
+    also_variable: <context_key>  # optional alias for write_context_key
+    required_scope: <scope>       # optional extra OAuth scope
+```
+
+Notes:
+
+- Requires orchestrator storage URL configuration (`STORAGE_SERVICE_URL`).
+- In OAuth mode, `storage_read` requires `minicloud:storage:read` (or matching wildcard).
+- `required_scope` can enforce an additional scope per step.
+- When `output_field` does not exist in the storage response, output becomes an empty string.
+
+---
+
+## 10.2 Step `type: storage_write`
+
+Writes a value to the storage service key-value API.
+
+```yaml
+- id: <string>
+  type: storage_write
+  storage:                        # alias: storage_write
+    bucket: <string>
+    key: <string>
+    value_from: <ref>
+    content_type: text/plain      # optional
+    also_variable: <context_key>  # optional alias for write_context_key
+    required_scope: <scope>       # optional extra OAuth scope
+```
+
+Notes:
+
+- `value_from` follows the same ref rules as §11.
+- In OAuth mode, `storage_write` requires `minicloud:storage:write` (or matching wildcard).
+- Storage service ACL is documented in [storage-acl.md](storage-acl.md).
+
+---
+
+## 10.3 Workflow context (orchestrator runtime map)
 
 During a run, the orchestrator keeps a **string map** `context` (independent of `outputs` / `previous`). In YAML you can name the storage key **`context_key`** or **`variable`** (same thing). In refs, use **`context:<key>`** or **`var:<key>`** interchangeably.
 
@@ -264,7 +351,7 @@ Write into the **first** XPath match: either element **text** or an **attribute*
 
 ---
 
-## 10.2 Conditional steps: `when` (IF / CASE-style)
+## 10.4 Conditional steps: `when` (IF / CASE-style)
 
 **There are no separate `if` / `case` step types.** Any step may include an optional **`when`** block. If present, the orchestrator evaluates it against **`context`** before running the step. If the condition is **false**, the step is **skipped**: `outputs[id] = previous` (unchanged pipeline), and trace records `skipped: true`, `reason: when`.
 

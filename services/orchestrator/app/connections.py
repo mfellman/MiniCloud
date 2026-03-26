@@ -97,6 +97,30 @@ class SftpConnection(BaseModel):
         return v
 
 
+class RabbitMqConnection(BaseModel):
+    name: str = Field(..., min_length=1)
+    type: str = Field(default="rabbitmq")
+    url: str = Field(..., min_length=1, description="AMQP connection URL")
+    exchange: str = Field(default="minicloud.events", min_length=1)
+    exchange_type: str = Field(default="topic")
+    routing_key: str | None = None
+    oauth_scope: str | None = None
+
+    @field_validator("type")
+    @classmethod
+    def type_rabbitmq(cls, v: str) -> str:
+        if v != "rabbitmq":
+            raise ValueError("RabbitMqConnection type must be rabbitmq")
+        return v
+
+    @field_validator("exchange_type")
+    @classmethod
+    def exchange_type_valid(cls, v: str) -> str:
+        if v not in ("topic", "direct", "fanout", "headers"):
+            raise ValueError("exchange_type must be topic, direct, fanout or headers")
+        return v
+
+
 def load_connections(directory: Path) -> dict[str, Any]:
     """Load *.yaml / *.yml connection definitions; keyed by name."""
     out: dict[str, Any] = {}
@@ -123,6 +147,8 @@ def load_connections(directory: Path) -> dict[str, Any]:
                 doc = SshConnection.model_validate(raw)
             elif t == "sftp":
                 doc = SftpConnection.model_validate(raw)
+            elif t == "rabbitmq":
+                doc = RabbitMqConnection.model_validate(raw)
             else:
                 LOG.error("unknown connection type in %s: %r", path, t)
                 continue

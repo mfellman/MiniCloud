@@ -24,4 +24,5 @@ ENV TRANSFORMERS_URL=http://transformers:8080
 ENV EGRESS_HTTP_URL=http://egress-http:8080
 ENV EGRESS_FTP_URL=http://egress-ftp:8080
 ENV EGRESS_SSH_URL=http://egress-ssh:8080
+ENV EGRESS_RABBITMQ_URL=http://egress-rabbitmq:8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

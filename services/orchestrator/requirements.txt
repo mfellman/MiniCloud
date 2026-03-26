@@ -5,3 +5,4 @@ pyyaml==6.0.3
 pydantic==2.12.5
 lxml==5.3.0
 PyJWT[crypto]==2.10.1
+aio-pika==9.5.7

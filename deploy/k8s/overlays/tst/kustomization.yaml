@@ -1,0 +1,83 @@
+# TST overlay — één cluster, namespace: minicloud-tst
+#
+# Apply:  kubectl apply -k deploy/k8s/overlays/tst
+# Image tags: :tst  (gepromoveerd vanuit dev na succesvolle tests)
+#
+# ACL-profiel: stage (read: qa + release-reader; write: orchestrator only)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: minicloud-tst
+
+resources:
+  - ../../
+
+images:
+  - name: minicloud/gateway
+    newTag: tst
+  - name: minicloud/orchestrator
+    newTag: tst
+  - name: minicloud/transformers
+    newTag: tst
+  - name: minicloud/storage
+    newTag: tst
+  - name: minicloud/identity
+    newTag: tst
+  - name: minicloud/egress-http
+    newTag: tst
+  - name: minicloud/egress-ftp
+    newTag: tst
+  - name: minicloud/egress-ssh
+    newTag: tst
+  - name: minicloud/dashboard
+    newTag: tst
+
+patches:
+  - target:
+      kind: Deployment
+      name: orchestrator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: orchestrator
+      spec:
+        template:
+          spec:
+            containers:
+              - name: orchestrator
+                env:
+                  - name: ORCH_RUNTIME_STORE
+                    value: http
+                  - name: ORCH_STORAGE_BEARER_TOKEN
+                    value: ""
+                  - name: ORCH_RELOAD_TOKEN
+                    value: ""
+
+  # TST ACL: qa-team mag lezen; alleen orchestrator mag schrijven
+  - target:
+      kind: Deployment
+      name: storage
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: storage
+      spec:
+        template:
+          spec:
+            containers:
+              - name: storage
+                env:
+                  - name: STORAGE_ACL_READ_ROLES
+                    value: orchestrator,qa,release-reader
+                  - name: STORAGE_ACL_WRITE_ROLES
+                    value: orchestrator,release-writer
+
+  - target:
+      kind: Ingress
+      name: gateway
+    patch: |-
+      - op: add
+        path: /spec/rules/0/host
+        value: minicloud-tst.example.com

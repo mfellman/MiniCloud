@@ -69,3 +69,23 @@ orchestrator:
   extends: .build-kaniko
   variables:
     SERVICE: orchestrator
+
+scheduler:
+  extends: .build-kaniko
+  variables:
+    SERVICE: scheduler
+
+dashboard:
+  extends: .build-kaniko
+  variables:
+    SERVICE: dashboard
+
+storage:
+  extends: .build-kaniko
+  variables:
+    SERVICE: storage
+
+identity:
+  extends: .build-kaniko
+  variables:
+    SERVICE: identity
