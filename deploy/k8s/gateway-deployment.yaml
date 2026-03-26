@@ -18,11 +18,19 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
         fsGroup: 10001
       containers:
         - name: gateway
           image: minicloud/gateway:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           env:
             # Only POST /v1/run and /v1/run/{name} are usable from outside; /v1/transform and /v1/status return 404.
             - name: GATEWAY_ORCHESTRATION_ONLY

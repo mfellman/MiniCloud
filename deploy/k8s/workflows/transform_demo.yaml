@@ -1,5 +1,6 @@
 # xml → JSON (xml2json) → Liquid met JSON-context
 name: transform_demo
+group: Integration
 invocation:
   allow_http: true
   allow_schedule: false

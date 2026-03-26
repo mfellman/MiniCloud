@@ -1,5 +1,6 @@
 # Alleen XSLT — geen externe HTTP (handig voor offline tests).
 name: minimal
+group: General
 invocation:
   allow_http: true
   allow_schedule: false

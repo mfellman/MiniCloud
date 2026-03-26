@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # MiniCloud: optioneel repo clonen/updaten, daarna tijdelijke Kustomize-overlay + kubectl apply.
 # Configuratie: deploy-config.local.env (zie deploy-config.example.env).
+# 
+# AUTHENTICATIE-GIDS:
+# - Git SSH: zorg dat SSH agent loopt (ssh-agent, Pageant in PuTTY)
+# - Git HTTPS: stel GIT_CREDENTIALS_HELPER in of zet environment vars
+# - Docker registry: GITLAB_REGISTRY_USER & PASSWORD in deploy-config.local.env
+# - Kubectl: KUBECONFIG omgevingsvariabele of ~/.kube/config
 #
 # Vereist: kubectl, git (voor sync/clone en TAG_MODE=git_short).
 set -euo pipefail
@@ -16,9 +22,42 @@ fi
 CONFIG_LOCAL="$SCRIPT_DIR/deploy-config.local.env"
 CONFIG_EXAMPLE="$SCRIPT_DIR/deploy-config.example.env"
 
+# AUTHENTICATIE SETUP
+# ==================
+
+# Enable verbose output voor debugging
+DEBUG_MODE="${DEBUG_MODE:-false}"
+if [[ "$DEBUG_MODE" == "true" ]]; then
+  set -x
+fi
+
+# Git credentials configuratie
+# Voor SSH: zorg dat ssh-agent loopt / Pageant actief is
+# Voor HTTPS: gebruik GIT_CREDENTIALS_HELPER of Git credentials store
+GIT_CREDENTIALS_HELPER="${GIT_CREDENTIALS_HELPER:-}" # bijv. "store" of "cache"
+if [[ -n "$GIT_CREDENTIALS_HELPER" ]]; then
+  git config --global credential.helper "$GIT_CREDENTIALS_HELPER"
+fi
+
+# SSH agent forwarding (voor PuTTY/RemoteDesktop scenario's)
+# Zorg dat SSH_AUTH_SOCK juist is ingesteld als je SSH forwarding gebruikt
+if [[ "${ENABLE_SSH_AGENT_FORWARD:-false}" == "true" ]]; then
+  if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
+    echo "Waarschuwing: ENABLE_SSH_AGENT_FORWARD=true maar SSH_AUTH_SOCK niet ingesteld" >&2
+    echo "  In PuTTY: Settings > Connection > SSH > Auth > Allow agent forwarding" >&2
+    echo "  Op initiator machine: eval \$(ssh-agent -s) && ssh-add ~/.ssh/id_rsa" >&2
+  fi
+fi
+
 if [[ ! -f "$CONFIG_LOCAL" ]]; then
   echo "Geen $CONFIG_LOCAL — kopieer en vul eerst in:" >&2
   echo "  cp $CONFIG_EXAMPLE $CONFIG_LOCAL" >&2
+  echo "  # Edit config: zet REGISTRY_PREFIX, NAMESPACE, GIT_REPO_URL, etc." >&2
+  echo "" >&2
+  echo "AUTHENTICATIE SETUP NODIG:" >&2
+  echo "  1. Git SSH: zorg dat SSH agent (ssh-agent/Pageant) actief is" >&2
+  echo "  2. Git HTTPS: use GIT_REPO_URL met https:// en optioneel GIT_CREDENTIALS_HELPER" >&2
+  echo "  3. Docker registry: zet GITLAB_REGISTRY_USER & PASSWORD" >&2
   exit 1
 fi
 
@@ -45,7 +84,6 @@ fi
 : "${PATCH_DEPLOYMENTS_PULL_SECRET:=true}"
 : "${DRY_RUN:=false}"
 : "${PRINT_ONLY:=false}"
-: "${BUILD_AFTER_SYNC:=true}"
 
 # auto: bij TAG_MODE=latest eerst repo bijwerken (aanbevolen op controller)
 UPDATE_GIT_BEFORE_DEPLOY="${UPDATE_GIT_BEFORE_DEPLOY:-auto}"
@@ -62,6 +100,39 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "kubectl niet gevonden; installeer kubectl." >&2
+  exit 1
+fi
+
+# DEBUGGING: check credentials beschikbaarheid
+check_credentials() {
+  local has_issues=0
+  
+  echo "Checking credentials..."
+  
+  # Check SSH agent (voor git SSH)
+  if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then
+    echo "  ✓ SSH agent actief"
+  else
+    if [[ -z "${GIT_REPO_URL:-}" ]] || [[ "$GIT_REPO_URL" == ssh://* ]]; then
+      echo "  ⚠ SSH agent niet actief - SSH git clone kan falen"
+      echo "    Zet up: eval \$(ssh-agent -s) && ssh-add ~/.ssh/id_rsa"
+      has_issues=1
+    fi
+  fi
+  
+  # Check kubectl access
+  if kubectl auth can-i get pods -n "$NAMESPACE" >/dev/null 2>&1 || kubectl auth can-i create namespace >/dev/null 2>&1; then
+    echo "  ✓ kubectl heeft voldoende rechten"
+  else
+    echo "  ⚠ kubectl rechten twijfelachtig - check kubeconfig"
+    has_issues=1
+  fi
+  
+  return $has_issues
+}
+
 sync_git_repo() {
   if [[ ! -d "$REPO_ROOT/.git" ]]; then
     if [[ -z "${GIT_REPO_URL:-}" ]]; then
@@ -74,13 +145,28 @@ sync_git_repo() {
       echo "REPO_ROOT bestaat en is niet leeg, maar is geen git-repo: $REPO_ROOT" >&2
       exit 1
     fi
+    
     echo "Clonen MiniCloud-repo naar $REPO_ROOT (branch $GIT_REF, depth $GIT_CLONE_DEPTH)..."
+    echo "  GIT_REPO_URL=$GIT_REPO_URL"
+    
     mkdir -p "$(dirname "$REPO_ROOT")"
     local depth_args=()
     if [[ -n "$GIT_CLONE_DEPTH" && "$GIT_CLONE_DEPTH" != "0" ]]; then
       depth_args=(--depth "$GIT_CLONE_DEPTH")
     fi
-    git clone "${depth_args[@]}" --branch "$GIT_REF" "$GIT_REPO_URL" "$REPO_ROOT"
+    
+    # Clone met SSH agent forwarding support
+    if GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=no}" \
+       git clone "${depth_args[@]}" --branch "$GIT_REF" "$GIT_REPO_URL" "$REPO_ROOT"; then
+      echo "✓ Clone gelukt"
+    else
+      echo "✗ Clone MISLUKT" >&2
+      echo "  Controleer:" >&2
+      echo "    1. GIT_REPO_URL is correct: $GIT_REPO_URL" >&2
+      echo "    2. SSH agent (ssh-agent/Pageant) loopt als je SSH gebruikt" >&2
+      echo "    3. Git credentials als je HTTPS gebruikt" >&2
+      exit 1
+    fi
     return 0
   fi
 
@@ -88,29 +174,20 @@ sync_git_repo() {
     return 0
   fi
 
-  # Zorg dat de remote de juiste URL (met credentials) heeft
-  if [[ -n "${GIT_REPO_URL:-}" ]]; then
-    git -C "$REPO_ROOT" remote set-url origin "$GIT_REPO_URL"
-  fi
-
   echo "Git bijwerken in $REPO_ROOT (branch $GIT_REF)..."
-  git -C "$REPO_ROOT" fetch origin
-  git -C "$REPO_ROOT" checkout "$GIT_REF"
-  git -C "$REPO_ROOT" pull --ff-only origin "$GIT_REF"
-}
-
-sync_git_repo
-
-# --- Docker build + push (standaard na elke sync/checkout) ----------------
-if [[ "$BUILD_AFTER_SYNC" == "true" ]]; then
-  echo "Docker images bouwen en pushen..."
-  if ! bash "$SCRIPT_DIR/build-and-push.sh"; then
-    echo "FOUT: build-and-push.sh mislukt — deploy wordt afgebroken." >&2
+  if git -C "$REPO_ROOT" fetch origin; then
+    git -C "$REPO_ROOT" checkout "$GIT_REF"
+    git -C "$REPO_ROOT" pull --ff-only origin "$GIT_REF"
+    echo "✓ Git pull gelukt"
+  else
+    echo "✗ Git fetch/pull MISLUKT" >&2
+    echo "  Dit kan voorkomen als:" >&2
+    echo "    - Geen internet connectie" >&2
+    echo "    - Git credentials ontbreken" >&2
+    echo "    - Bepaalde branch bestaat niet" >&2
     exit 1
   fi
-else
-  echo "BUILD_AFTER_SYNC=false — images worden niet opnieuw gebouwd."
-fi
+}
 
 resolve_tag() {
   case "$TAG_MODE" in
@@ -175,33 +252,55 @@ images:
   - name: minicloud/egress-ssh
     newName: ${REGISTRY_PREFIX}/egress-ssh
     newTag: ${TAG}
-  - name: minicloud/dashboard
-    newName: ${REGISTRY_PREFIX}/dashboard
-    newTag: ${TAG}
 EOF
 } >"$KUST"
 
-echo "MiniCloud deploy — namespace=$NAMESPACE tag=$TAG registry=$REGISTRY_PREFIX repo=$REPO_ROOT"
+echo ""
+echo "=== DEPLOYMENT CONFIGURATIE ==="
+echo "Namespace:      $NAMESPACE"
+echo "Tag:            $TAG"
+echo "Tag mode:       $TAG_MODE"
+echo "Registry:       $REGISTRY_PREFIX"
+echo "Repo:           $REPO_ROOT"
+echo "Dry-run:        $DRY_RUN"
+echo ""
+
 if [[ "$PRINT_ONLY" == "true" ]]; then
   echo "--- gegenereerde kustomization:"
   cat "$KUST"
   exit 0
 fi
 
+# CHECK CREDENTIALS
+check_credentials || {
+  echo ""
+  echo "⚠ Potentiële authenticatie-problemen gedetecteerd."
+  echo "Type 'yes' om toch door te gaan, of Ctrl+C om af te breken:"
+  read -r response
+  if [[ "$response" != "yes" ]]; then
+    exit 1
+  fi
+}
+
+echo ""
+echo "=== DEPLOYMENT START ==="
+echo ""
+
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 if [[ "$CREATE_PULL_SECRET" == "true" ]]; then
   if [[ -z "${GITLAB_REGISTRY_USER:-}" || -z "${GITLAB_REGISTRY_PASSWORD:-}" ]]; then
-    echo "CREATE_PULL_SECRET=true maar GITLAB_REGISTRY_USER/PASSWORD ontbreekt" >&2
+    echo "✗ CREATE_PULL_SECRET=true maar GITLAB_REGISTRY_USER/PASSWORD ontbreekt" >&2
     exit 1
   fi
+  echo "Creating pull secret: $PULL_SECRET_NAME"
   kubectl create secret docker-registry "$PULL_SECRET_NAME" \
     --namespace="$NAMESPACE" \
     --docker-server="$GITLAB_REGISTRY_SERVER" \
     --docker-username="$GITLAB_REGISTRY_USER" \
     --docker-password="$GITLAB_REGISTRY_PASSWORD" \
     --dry-run=client -o yaml | kubectl apply -f -
-  echo "Pull secret $PULL_SECRET_NAME bijgewerkt."
+  echo "✓ Pull secret bijgewerkt."
 fi
 
 APPLY_ARGS=()
@@ -210,31 +309,24 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo "Dry-run (server): geen permanente wijzigingen."
 fi
 
+echo "Applying kustomization..."
 kubectl apply "${APPLY_ARGS[@]}" -k "$TMP"
 
 if [[ "$PATCH_DEPLOYMENTS_PULL_SECRET" == "true" && "$DRY_RUN" != "true" ]]; then
-  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
+  echo "Patching deployments met pull secret..."
+  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh; do
     if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
       kubectl patch deployment "$d" -n "$NAMESPACE" --type merge -p \
         "{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"${PULL_SECRET_NAME}\"}]}}}}"
+      echo "  ✓ $d gepatched"
     fi
   done
 fi
 
-# Rollout restart zodat pods altijd de nieuwste image ophalen (belangrijk bij tag=latest)
-if [[ "$DRY_RUN" != "true" && "$TAG" == "latest" ]]; then
-  echo "Rollout restart van alle deployments (tag=latest)..."
-  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
-    if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
-      kubectl rollout restart deployment/"$d" -n "$NAMESPACE"
-    fi
-  done
-  echo "Wacht op rollout..."
-  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
-    if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
-      kubectl rollout status deployment/"$d" -n "$NAMESPACE" --timeout=120s || true
-    fi
-  done
-fi
-
-echo "Klaar. Controleer: kubectl get pods -n $NAMESPACE"
+echo ""
+echo "✓ Klaar!"
+echo ""
+echo "Controleer deployment status:"
+echo "  kubectl get pods -n $NAMESPACE"
+echo "  kubectl logs -n $NAMESPACE deployment/orchestrator"
+echo ""

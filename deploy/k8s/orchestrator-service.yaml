@@ -6,10 +6,12 @@ metadata:
     app.kubernetes.io/name: minicloud
     app.kubernetes.io/component: orchestrator
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app.kubernetes.io/name: orchestrator
   ports:
     - name: http
       port: 8080
       targetPort: http
+      nodePort: 30083
+      protocol: TCP

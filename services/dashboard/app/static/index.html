@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiniCloud Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg class="logo" viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+      <span>MiniCloud</span>
+    </div>
+    <div class="topbar-right">
+      <nav class="breadcrumb" id="breadcrumb"></nav>
+      <div class="topbar-status" id="connStatus">Connecting&#8230;</div>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Sidebar: grouped workflow tree -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <h3>Workflows</h3>
+        <ul id="workflowTree"></ul>
+      </div>
+    </aside>
+
+    <!-- Centre content -->
+    <main class="content" id="content">
+      <!-- Placeholder -->
+      <div class="placeholder" id="placeholder">
+        <svg viewBox="0 0 24 24" width="64" height="64" opacity=".25"><path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+        <p>Select a workflow from the sidebar</p>
+      </div>
+
+      <!-- Workflow detail view -->
+      <div class="hidden" id="workflowPanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2 id="wfTitle"></h2>
+            <div class="wf-group-label" id="wfGroupLabel"></div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn btn-primary" id="btnViewDesign">&#9654; View Design</button>
+            <button class="btn" id="btnRefreshRuns">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <!-- Stat cards -->
+        <div class="stat-cards" id="wfStats"></div>
+
+        <!-- Run history -->
+        <div class="runs-header">
+          <h3>Run History</h3>
+        </div>
+        <div class="run-table-wrap">
+          <table class="run-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Request ID</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="runTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Run detail view -->
+      <div class="hidden" id="runPanel">
+        <div class="run-detail-header">
+          <h2 id="runTitle"></h2>
+          <span class="badge" id="runStatus"></span>
+        </div>
+        <div class="run-detail-meta" id="runMeta"></div>
+        <div class="hidden run-error" id="runError"></div>
+        <div class="graph-container" id="runGraph"></div>
+      </div>
+    </main>
+
+    <!-- Right detail panel (step input/output) -->
+    <aside class="detail-panel hidden" id="detailPanel">
+      <div class="detail-header">
+        <h3 id="detailTitle">Step Detail</h3>
+        <button class="btn-close" id="detailClose">&times;</button>
+      </div>
+      <div class="detail-body">
+        <div class="detail-tabs">
+          <button class="tab active" data-tab="input">Input</button>
+          <button class="tab" data-tab="output">Output</button>
+          <button class="tab" data-tab="meta">Info</button>
+        </div>
+        <div class="tab-content" id="tabInput">
+          <pre id="detailInput" class="code-block"></pre>
+        </div>
+        <div class="tab-content hidden" id="tabOutput">
+          <pre id="detailOutput" class="code-block"></pre>
+        </div>
+        <div class="tab-content hidden" id="tabMeta">
+          <pre id="detailMeta" class="code-block"></pre>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

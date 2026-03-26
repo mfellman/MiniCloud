@@ -18,11 +18,19 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
         fsGroup: 10001
       containers:
         - name: orchestrator
           image: minicloud/orchestrator:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           env:
             - name: TRANSFORMERS_URL
               value: http://transformers:8080
@@ -38,6 +46,11 @@ spec:
               value: /app/workflows
             - name: CONNECTIONS_DIR
               value: /app/connections
+            # Trace opslag (persistent workflow run history)
+            - name: TRACES_DIR
+              value: /app/traces
+            - name: TRACES_MAX_RUNS
+              value: "200"
             # Optioneel: Bearer voor POST /run en POST /run/{name} (HTTP / gateway /v1/run)
             # - name: HTTP_INVOCATION_TOKEN
             #   valueFrom:
@@ -69,6 +82,8 @@ spec:
             - name: connections
               mountPath: /app/connections
               readOnly: true
+            - name: traces
+              mountPath: /app/traces
           readinessProbe:
             httpGet:
               path: /readyz
@@ -94,3 +109,5 @@ spec:
         - name: connections
           configMap:
             name: minicloud-connections
+        - name: traces
+          emptyDir: {}

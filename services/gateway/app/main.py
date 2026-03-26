@@ -307,3 +307,48 @@ async def run_workflow(
         rid=rid,
         authorization=authorization,
     )
+
+
+# ---------------------------------------------------------------------------
+# Trace API (proxy to orchestrator /api/traces)
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/traces")
+async def list_traces(limit: int = 50) -> Response:
+    """Proxy trace list from orchestrator."""
+    if not ORCHESTRATOR_URL:
+        raise HTTPException(status_code=503, detail="Orchestrator not configured")
+    if GATEWAY_ORCHESTRATION_ONLY:
+        raise HTTPException(status_code=403, detail="Trace API disabled in orchestration-only mode")
+    url = f"{ORCHESTRATOR_URL}/api/traces?limit={min(limit, 500)}"
+    async with httpx.AsyncClient(timeout=ORCH_TIMEOUT) as client:
+        r = await client.get(url)
+    return Response(content=r.content, status_code=r.status_code, media_type="application/json")
+
+
+@app.get("/v1/traces/{request_id}")
+async def get_trace(request_id: str) -> Response:
+    """Proxy single trace from orchestrator."""
+    if not ORCHESTRATOR_URL:
+        raise HTTPException(status_code=503, detail="Orchestrator not configured")
+    if GATEWAY_ORCHESTRATION_ONLY:
+        raise HTTPException(status_code=403, detail="Trace API disabled in orchestration-only mode")
+    url = f"{ORCHESTRATOR_URL}/api/traces/{quote(request_id)}"
+    async with httpx.AsyncClient(timeout=ORCH_TIMEOUT) as client:
+        r = await client.get(url)
+    return Response(content=r.content, status_code=r.status_code, media_type="application/json")
+
+
+@app.get("/v1/traces/{request_id}/steps/{step_path:path}/{kind}")
+async def get_step_data(request_id: str, step_path: str, kind: str) -> Response:
+    """Proxy step input/output data from orchestrator."""
+    if not ORCHESTRATOR_URL:
+        raise HTTPException(status_code=503, detail="Orchestrator not configured")
+    if GATEWAY_ORCHESTRATION_ONLY:
+        raise HTTPException(status_code=403, detail="Trace API disabled in orchestration-only mode")
+    if kind not in ("input", "output"):
+        raise HTTPException(status_code=400, detail="kind must be 'input' or 'output'")
+    url = f"{ORCHESTRATOR_URL}/api/traces/{quote(request_id)}/steps/{quote(step_path)}/{kind}"
+    async with httpx.AsyncClient(timeout=ORCH_TIMEOUT) as client:
+        r = await client.get(url)
+    return Response(content=r.content, status_code=r.status_code, media_type=r.headers.get("content-type", "text/plain"))
