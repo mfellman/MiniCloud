@@ -3,8 +3,22 @@ from __future__ import annotations
 import base64
 import hashlib
 import importlib
+import pytest
 
 from fastapi.testclient import TestClient
+
+@pytest.fixture(autouse=True)
+def mock_identity(dashboard_app, monkeypatch):
+    """Bypass the identity middleware for tests so they don't fail with 401."""
+    dashboard_main = importlib.import_module("app.main")
+
+    async def fake_identity(method, path, **kwargs):
+        if path == "/auth/me":
+            return {"username": "admin", "scopes": ["minicloud:*"], "groups": []}
+        return {}
+
+    monkeypatch.setattr(dashboard_main, "_identity_request", fake_identity)
+    monkeypatch.setattr(dashboard_main, "_extract_identity_token", lambda r: "test-token")
 
 
 def test_rabbitmq_status_reports_disabled_by_default(dashboard_app):

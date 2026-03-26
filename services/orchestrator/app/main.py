@@ -468,6 +468,10 @@ async def _execute(
         LOG.error("upstream error request_id=%s: %s", rid, e)
         rt.finish(status="failed", error=f"Upstream error: {e}")
         raise HTTPException(status_code=502, detail=f"Upstream error: {e}") from e
+    except Exception as e:
+        LOG.error("unexpected error request_id=%s: %s", rid, e)
+        rt.finish(status="failed", error=f"Internal error: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     rt.finish(status="succeeded", final_output=final_body, context=_ctx)
     LOG.info(
