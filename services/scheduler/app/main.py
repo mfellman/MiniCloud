@@ -67,7 +67,6 @@ class ScheduleResponse(BaseModel):
 # Auth helpers
 # ============================================================================
 async def _verify_scheduler_permission(
-    request,
     x_user: Annotated[str | None, Header(alias="X-User")] = None,
 ) -> str:
     """Verify user has scheduler admin or contributor rights."""
@@ -222,6 +221,25 @@ async def delete_schedule(
 
     LOG.info("schedule deleted: job_id=%s user=%s", job_id, user)
     return {"status": "deleted", "job_id": job_id}
+
+
+@app.post("/schedules/{job_id}/run")
+async def run_schedule_now(
+    job_id: str,
+    user: str = Depends(_verify_scheduler_permission),
+) -> dict:
+    """Trigger an existing schedule immediately (manual run)."""
+    sched = _schedules.get(job_id)
+    if not sched:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    await _trigger_workflow(sched["workflow"], sched["payload"])
+    LOG.info("schedule manually triggered: job_id=%s workflow=%s user=%s", job_id, sched["workflow"], user)
+    return {
+        "status": "triggered",
+        "job_id": job_id,
+        "workflow_name": sched["workflow"],
+    }
 
 
 # ============================================================================

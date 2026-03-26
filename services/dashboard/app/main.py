@@ -458,7 +458,10 @@ async def _scheduler_proxy(method: str, path: str, *, body: Any = None, user: st
         if method == "GET":
             r = await client.get(url, headers=headers)
         elif method == "POST":
-            r = await client.post(url, json=body, headers=headers)
+            if body is None:
+                r = await client.post(url, headers=headers)
+            else:
+                r = await client.post(url, json=body, headers=headers)
         elif method == "PUT":
             r = await client.put(url, json=body, headers=headers)
         elif method == "DELETE":
@@ -512,6 +515,12 @@ async def scheduler_create_schedule(body: dict, request: Request) -> Any:
 async def scheduler_delete_schedule(job_id: str, request: Request) -> Any:
     me = await _require_identity_user(request)
     return await _scheduler_proxy("DELETE", f"/schedules/{job_id}", user=me.get("username", "anonymous"))
+
+
+@app.post("/api/scheduler/schedules/{job_id}/run")
+async def scheduler_run_schedule(job_id: str, request: Request) -> Any:
+    me = await _require_identity_user(request)
+    return await _scheduler_proxy("POST", f"/schedules/{job_id}/run", user=me.get("username", "anonymous"))
 
 
 @app.get("/api/iam/permissions")

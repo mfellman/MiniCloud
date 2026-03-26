@@ -719,7 +719,10 @@ async function submitSchedule() {
       } catch {
         data = { raw: text };
       }
-      errorEl.textContent = `Schedule failed (${resp.status}): ${data.detail || JSON.stringify(data)}`;
+      const detail = Array.isArray(data.detail)
+        ? data.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : (data.detail || JSON.stringify(data));
+      errorEl.textContent = `Schedule failed (${resp.status}): ${detail}`;
       errorEl.classList.remove("hidden");
       return;
     }
@@ -773,6 +776,7 @@ async function openSchedulesListModal() {
         <td><code style="font-size:12px;background:var(--bg-alt);padding:2px 4px;">${esc(sched.cron_expression)}</code></td>
         <td>${sched.next_run_time ? new Date(sched.next_run_time).toLocaleString() : "Never"}</td>
         <td>
+          <button class="btn-small" onclick="runScheduleNow('${esc(sched.job_id)}', event)">Run now</button>
           <button class="btn-small" onclick="deleteSchedule('${esc(sched.job_id)}', event)">Delete</button>
         </td>
       `;
@@ -793,6 +797,37 @@ function closeSchedulesListModal() {
   modal.classList.add("hidden");
 }
 
+async function runScheduleNow(jobId, event) {
+  event.stopPropagation();
+
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/schedules/${encodeURIComponent(jobId)}/run`, {
+      method: "POST",
+      headers: { "X-User": identitySession.username || "anonymous" }
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      const detail = Array.isArray(data.detail)
+        ? data.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : (data.detail || JSON.stringify(data));
+      alert(`Manual run failed (${resp.status}): ${detail}`);
+      return;
+    }
+
+    await openSchedulesListModal();
+    alert("Manual run triggered successfully.");
+  } catch (e) {
+    alert(`Manual run failed: ${e.message || e}`);
+  }
+}
+
 async function deleteSchedule(jobId, event) {
   event.stopPropagation();
   if (!confirm(`Delete this schedule?`)) return;
@@ -811,7 +846,10 @@ async function deleteSchedule(jobId, event) {
       } catch {
         data = { raw: text };
       }
-      alert(`Delete failed (${resp.status}): ${data.detail || JSON.stringify(data)}`);
+      const detail = Array.isArray(data.detail)
+        ? data.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : (data.detail || JSON.stringify(data));
+      alert(`Delete failed (${resp.status}): ${detail}`);
       return;
     }
 
