@@ -46,10 +46,12 @@ spec:
               value: http://egress-rabbitmq:8080
             - name: STORAGE_SERVICE_URL
               value: http://storage:8080
-            - name: WORKFLOWS_DIR
-              value: /app/workflows
-            - name: CONNECTIONS_DIR
-              value: /app/connections
+            - name: ORCH_RUNTIME_STORE
+              value: "http"
+            - name: ORCH_STORAGE_BEARER_TOKEN
+              value: ""
+            - name: ORCH_RELOAD_TOKEN
+              value: ""
             # Trace opslag (persistent workflow run history)
             - name: TRACES_DIR
               value: /app/traces
@@ -109,12 +111,6 @@ spec:
             - name: http
               containerPort: 8080
           volumeMounts:
-            - name: workflows
-              mountPath: /app/workflows
-              readOnly: true
-            - name: connections
-              mountPath: /app/connections
-              readOnly: true
             - name: traces
               mountPath: /app/traces
           readinessProbe:
@@ -136,11 +132,5 @@ spec:
             limits:
               memory: 512Mi
       volumes:
-        - name: workflows
-          configMap:
-            name: minicloud-workflows
-        - name: connections
-          configMap:
-            name: minicloud-connections
         - name: traces
           emptyDir: {}

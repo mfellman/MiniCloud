@@ -1,4 +1,4 @@
-﻿"""Tests for trace_store and trace integration in workflow runs."""
+"""Tests for trace_store and trace integration in workflow runs."""
 from __future__ import annotations
 
 import json
@@ -180,7 +180,7 @@ async def test_trace_integration_minimal_workflow(tmp_path):
     ts = _load_trace_store(str(tmp_path))
     wr = load_workflow_runner_standalone()
     workflows = wr.load_workflows(
-        REPO_ROOT / "services" / "orchestrator" / "workflows",
+        REPO_ROOT / "workflows",
     )
     doc = workflows["minimal"]
 
@@ -231,14 +231,14 @@ async def test_trace_integration_minimal_workflow(tmp_path):
 @pytest.mark.asyncio
 async def test_trace_integration_transform_demo(tmp_path):
     """
-    Run transform_demo with tracing â€” confirms multi-step traces work.
+    Run transform_demo with tracing — confirms multi-step traces work.
     """
     os.environ["TRACES_DIR"] = str(tmp_path)
 
     ts = _load_trace_store(str(tmp_path))
     wr = load_workflow_runner_standalone()
     workflows = wr.load_workflows(
-        REPO_ROOT / "services" / "orchestrator" / "workflows",
+        REPO_ROOT / "workflows",
     )
     doc = workflows["transform_demo"]
 
@@ -272,3 +272,4 @@ async def test_trace_integration_transform_demo(tmp_path):
     for step_entry in doc_trace["steps"]:
         assert "started_at" in step_entry
         assert "duration_ms" in step_entry
+

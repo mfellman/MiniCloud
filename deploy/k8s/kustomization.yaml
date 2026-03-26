@@ -5,27 +5,6 @@ kind: Kustomization
 namespace: minicloud
 generatorOptions:
   disableNameSuffixHash: true
-configMapGenerator:
-  - name: minicloud-workflows
-    files:
-      - workflows/demo.yaml
-      - workflows/loop_demo.yaml
-      - workflows/minimal.yaml
-      - workflows/schedule_only_demo.yaml
-      - workflows/storage_demo.yaml
-      - workflows/storage_write_demo.yaml
-      - workflows/storage_write_read_demo.yaml
-      - workflows/storage_changed_trigger.yaml
-      - workflows/storage.kv.updated.1.yaml
-      - workflows/transform_demo.yaml
-      - workflows/rabbitmq_publish_demo.yaml
-      - workflows/rabbitmq_queue_publish_demo.yaml
-      - workflows/queue.demo.ingest.1.yaml
-      - workflows/test.messageservice.publish.0.1.yaml
-  - name: minicloud-connections
-    files:
-      - connections/example_http.yaml
-      - connections/example_rabbitmq.yaml
 resources:
   - configmap-templates.yaml
   - egress-http-deployment.yaml
@@ -56,3 +35,4 @@ resources:
   - dashboard-deployment.yaml
   - dashboard-service.yaml
   - ingress.yaml
+

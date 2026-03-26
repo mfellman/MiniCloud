@@ -14,8 +14,6 @@ RUN useradd --create-home --uid 10001 appuser
 COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
 COPY app ./app
-COPY workflows ./workflows
-COPY connections ./connections
 USER appuser
 EXPOSE 8080
 ENV WORKFLOWS_DIR=/app/workflows
