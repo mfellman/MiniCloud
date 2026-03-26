@@ -15,7 +15,7 @@ async def test_run_minimal_workflow_xslt_only():
     """
     wr = load_workflow_runner_standalone()
     workflows = wr.load_workflows(
-        REPO_ROOT / "services" / "orchestrator" / "workflows",
+        REPO_ROOT / "workflows",
     )
     doc = workflows["minimal"]
 
@@ -42,3 +42,4 @@ async def test_run_minimal_workflow_xslt_only():
     assert len(trace) == 1
     assert trace[0]["type"] == "xslt"
     assert trace[0]["ok"] is True
+
