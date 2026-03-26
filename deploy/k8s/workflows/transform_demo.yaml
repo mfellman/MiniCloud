@@ -4,6 +4,10 @@ group: Integration
 invocation:
   allow_http: true
   allow_schedule: false
+example_payloads:
+  - name: trace-test-transform-demo
+    payload:
+      xml: "<greet><name>MiniCloud</name></greet>"
 steps:
   - id: as_json
     type: xml2json

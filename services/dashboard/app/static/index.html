@@ -328,6 +328,29 @@
       </div>
     </aside>
   </div>
+
+  <!-- Rerun Modal -->
+  <div class="rerun-modal hidden" id="rerunModal">
+    <div class="rerun-modal-backdrop" id="rerunModalBackdrop"></div>
+    <div class="rerun-modal-content">
+      <div class="rerun-modal-header">
+        <h2>Re-run Workflow</h2>
+        <button class="btn-close" id="rerunModalClose">&times;</button>
+      </div>
+      <div class="rerun-modal-body">
+        <p id="rerunWorkflowName" style="color:var(--text-muted);font-size:14px;margin-bottom:12px"></p>
+        <label style="display:block;margin-bottom:8px;font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted)">
+          Payload (editable)
+        </label>
+        <textarea id="rerunPayload" class="rerun-payload" placeholder='{"xml": "..."}'></textarea>
+        <div id="rerunError" class="rerun-error hidden"></div>
+      </div>
+      <div class="rerun-modal-footer">
+        <button class="btn" id="rerunModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="rerunModalConfirm">Re-run</button>
+      </div>
+    </div>
+  </div>
 </div>
 <script src="/static/app.js"></script>
 </body>

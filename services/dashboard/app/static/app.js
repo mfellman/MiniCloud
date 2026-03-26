@@ -39,6 +39,7 @@ let currentWorkflow = null;     // full workflow detail (with steps)
 let currentWorkflowName = null; // selected workflow name
 let currentTrace = null;        // full trace when viewing a run
 let currentRunId = null;
+let rerunContext = null;        // {workflowName, runId, originalPayload}
 let rabbitStatus = null;
 let currentStorageBucket = null;
 let currentStorageKeys = [];
@@ -138,6 +139,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderStorageKeysPage();
   });
   document.getElementById("detailClose").addEventListener("click", closeDetail);
+
+  // Rerun modal handlers
+  document.getElementById("rerunModalClose").addEventListener("click", closeRerunModal);
+  document.getElementById("rerunModalBackdrop").addEventListener("click", closeRerunModal);
+  document.getElementById("rerunModalCancel").addEventListener("click", closeRerunModal);
+  document.getElementById("rerunModalConfirm").addEventListener("click", submitRerun);
 
   document.querySelectorAll(".detail-tabs .tab").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -310,6 +317,13 @@ function normalizeWorkflow(raw, fallbackName = "") {
   const stepTypes = Array.isArray(wf.step_types) ? wf.step_types : [];
   const stepCount = Number.isFinite(wf.step_count) ? wf.step_count : steps.length;
 
+  const examplePayloads = Array.isArray(wf.example_payloads)
+    ? wf.example_payloads
+        .filter(ep => ep && typeof ep.name === "string" && ep.payload && typeof ep.payload === "object")
+        .map(ep => ({ name: ep.name.trim(), payload: ep.payload }))
+        .filter(ep => ep.name)
+    : [];
+
   return {
     ...wf,
     name: typeof wf.name === "string" && wf.name ? wf.name : fallbackName,
@@ -318,6 +332,7 @@ function normalizeWorkflow(raw, fallbackName = "") {
       allow_http: !!invocationRaw.allow_http,
       allow_schedule: !!invocationRaw.allow_schedule,
     },
+    example_payloads: examplePayloads,
     steps,
     step_types: stepTypes,
     step_count: stepCount,
@@ -369,12 +384,26 @@ async function loadRunsForWorkflow(name) {
       const statusCls = run.status === "succeeded" ? "badge-green"
         : run.status === "failed" ? "badge-red" : "badge-orange";
 
+      const rerunBtn = document.createElement("button");
+      rerunBtn.className = "btn btn-small";
+      rerunBtn.textContent = "⟲ Re-run";
+      rerunBtn.title = "Re-run this workflow";
+      rerunBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openRerunModal(run.request_id, name);
+      });
+
       tr.innerHTML = `
         <td><span class="badge ${statusCls}">${esc(run.status)}</span></td>
         <td style="font-family:var(--mono);font-size:12px">${esc(shortId(run.request_id))}</td>
         <td>${formatTime(run.started_at)}</td>
         <td>${formatDuration(run.duration_ms)}</td>
         <td style="color:var(--accent);font-size:12px">View &rarr;</td>`;
+      
+      // Insert the rerun button into the last td
+      const lastTd = tr.lastChild;
+      lastTd.appendChild(rerunBtn);
+      
       tr.addEventListener("click", () => selectRun(run.request_id, name));
       tbody.appendChild(tr);
     }
@@ -435,6 +464,102 @@ function renderRunDetail(trace) {
   container.appendChild(buildPipeline(steps, stepTraces));
 }
 
+// ---------------------------------------------------------------------------
+// Rerun modal
+// ---------------------------------------------------------------------------
+async function openRerunModal(runId, workflowName) {
+  try {
+    // Fetch the original trace to extract the payload
+    const trace = await api(`/api/traces/${encodeURIComponent(runId)}`);
+    
+    // Extract the original payload from the trace
+    const originalPayload = trace.payload || { xml: "" };
+    const payloadStr = typeof originalPayload === "string" 
+      ? originalPayload 
+      : JSON.stringify(originalPayload, null, 2);
+    
+    // Store the context for submission
+    rerunContext = { workflowName, runId, originalPayload };
+    
+    // Populate and show the modal
+    document.getElementById("rerunWorkflowName").textContent = 
+      `Workflow: ${esc(workflowName)} — Original run: ${esc(shortId(runId))}`;
+    document.getElementById("rerunPayload").value = payloadStr;
+    document.getElementById("rerunError").classList.add("hidden");
+    
+    const modal = document.getElementById("rerunModal");
+    modal.classList.remove("hidden");
+  } catch (e) {
+    console.error("openRerunModal", e);
+    alert(`Failed to open rerun modal: ${e.message || e}`);
+  }
+}
+
+function closeRerunModal() {
+  const modal = document.getElementById("rerunModal");
+  modal.classList.add("hidden");
+  rerunContext = null;
+}
+
+async function submitRerun() {
+  if (!rerunContext) {
+    console.warn("submitRerun: no rerun context");
+    return;
+  }
+
+  const payloadEl = document.getElementById("rerunPayload");
+  const errorEl = document.getElementById("rerunError");
+  const confirmBtn = document.getElementById("rerunModalConfirm");
+  
+  let parsed;
+  try {
+    parsed = JSON.parse(payloadEl.value || "{}");
+  } catch (e) {
+    errorEl.textContent = `Invalid JSON payload: ${e.message || e}`;
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  if (!parsed || typeof parsed !== "object" || typeof parsed.xml !== "string" || !parsed.xml.trim()) {
+    errorEl.textContent = "Payload must be a JSON object with non-empty string field 'xml'.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  confirmBtn.disabled = true;
+  errorEl.classList.add("hidden");
+  
+  try {
+    const resp = await fetch(`/api/run/${encodeURIComponent(rerunContext.workflowName)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ xml: parsed.xml }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      errorEl.textContent = `Re-run failed (${resp.status}): ${data.detail || JSON.stringify(data)}`;
+      errorEl.classList.remove("hidden");
+      return;
+    }
+
+    // Success — close modal and refresh the run history
+    closeRerunModal();
+    await loadRunsForWorkflow(rerunContext.workflowName);
+  } catch (e) {
+    errorEl.textContent = `Re-run failed: ${e.message || e}`;
+    errorEl.classList.remove("hidden");
+  } finally {
+    confirmBtn.disabled = false;
+  }
+}
+
 function buildStepTraceMap(traceSteps) {
   const map = {};
   for (const s of traceSteps) {
@@ -459,10 +584,17 @@ function showDesignOverlay() {
   const overlay = document.createElement("div");
   const allowsHttp = !!(currentWorkflow.invocation && currentWorkflow.invocation.allow_http);
   const canRun = allowsHttp && canRunWorkflow(currentWorkflow.name);
-  const presets = loadDesignPresets(currentWorkflow.name);
+  const localPresets = loadDesignPresets(currentWorkflow.name);
+  const workflowPresets = getWorkflowExamplePresets(currentWorkflow);
+  const presets = [...workflowPresets];
+  for (const p of localPresets) {
+    if (!presets.some(existing => existing.name === p.name)) {
+      presets.push(p);
+    }
+  }
   const initialPayload = presets.length > 0
-    ? String(presets[0].payload || defaultDesignPayload())
-    : defaultDesignPayload();
+    ? String(presets[0].payload || defaultDesignPayload(currentWorkflow))
+    : defaultDesignPayload(currentWorkflow);
   overlay.className = "design-overlay";
   overlay.innerHTML = `
     <div class="design-modal">
@@ -488,13 +620,22 @@ function showDesignOverlay() {
           <textarea id="designPayload" class="design-payload">${esc(initialPayload)}</textarea>
           <pre id="designRunOutput" class="code-block">Run output will appear here.</pre>
         </section>
+
+        <section class="design-layout">
+          <div class="design-flow" id="designFlow"></div>
+          <aside class="design-step-detail" id="designStepDetailPanel">
+            <div class="design-step-detail-title" id="designStepDetailTitle">Step details</div>
+            <div class="design-step-detail-subtitle">Click a step in the design to inspect configuration.</div>
+            <pre id="designStepDetail" class="code-block">No step selected.</pre>
+          </aside>
+        </section>
       </div>
     </div>`;
 
   document.body.appendChild(overlay);
 
-  const body = overlay.querySelector("#designBody");
-  body.appendChild(buildPipeline(currentWorkflow.steps, null));
+  const flowEl = overlay.querySelector("#designFlow");
+  flowEl.appendChild(buildPipeline(currentWorkflow.steps, null));
 
   const runBtn = overlay.querySelector("#designRunBtn");
   if (runBtn) {
@@ -509,7 +650,21 @@ function showDesignOverlay() {
   });
 }
 
-function defaultDesignPayload() {
+function getWorkflowExamplePresets(workflow) {
+  if (!workflow || !Array.isArray(workflow.example_payloads)) {
+    return [];
+  }
+  return workflow.example_payloads
+    .filter(ep => ep && typeof ep.name === "string" && ep.payload && typeof ep.payload === "object")
+    .map(ep => ({ name: ep.name.trim(), payload: JSON.stringify(ep.payload, null, 2) }))
+    .filter(ep => ep.name && ep.payload);
+}
+
+function defaultDesignPayload(workflow = currentWorkflow) {
+  const preset = getWorkflowExamplePresets(workflow)[0];
+  if (preset && preset.payload) {
+    return preset.payload;
+  }
   return JSON.stringify({ xml: "<?xml version=\"1.0\"?><root/>" }, null, 2);
 }
 
@@ -731,6 +886,11 @@ function buildStepNode(step, stepTraces) {
 
   node.addEventListener("click", (e) => {
     e.stopPropagation();
+    const overlay = node.closest(".design-overlay");
+    if (overlay) {
+      selectDesignStepNode(step, trace, node, overlay);
+      return;
+    }
     selectStepNode(step, trace, node);
   });
 
@@ -761,6 +921,11 @@ function buildLoopNode(step, stepTraces) {
 
   wrap.querySelector(".loop-header").addEventListener("click", (e) => {
     e.stopPropagation();
+    const overlay = wrap.closest(".design-overlay");
+    if (overlay) {
+      selectDesignStepNode(step, trace, wrap, overlay);
+      return;
+    }
     selectStepNode(step, trace, wrap);
   });
 
@@ -770,6 +935,36 @@ function buildLoopNode(step, stepTraces) {
 // ---------------------------------------------------------------------------
 // Step detail panel
 // ---------------------------------------------------------------------------
+function selectDesignStepNode(step, trace, nodeEl, overlay) {
+  overlay.querySelectorAll(".pipe-node.selected").forEach(n => n.classList.remove("selected"));
+  overlay.querySelectorAll(".loop-header.selected").forEach(n => n.classList.remove("selected"));
+
+  if (nodeEl.classList.contains("pipe-node")) {
+    nodeEl.classList.add("selected");
+  } else {
+    const hdr = nodeEl.querySelector(".loop-header");
+    if (hdr) hdr.classList.add("selected");
+  }
+
+  const titleEl = overlay.querySelector("#designStepDetailTitle");
+  const detailEl = overlay.querySelector("#designStepDetail");
+  if (!titleEl || !detailEl) {
+    return;
+  }
+
+  titleEl.textContent = `${step.id} (${step.type})`;
+  const detail = {
+    id: step.id,
+    type: step.type,
+    when: step.when || null,
+    configuration: step,
+  };
+  if (trace) {
+    detail.trace = trace;
+  }
+  detailEl.textContent = JSON.stringify(detail, null, 2);
+}
+
 function selectStepNode(step, trace, nodeEl) {
   document.querySelectorAll(".pipe-node.selected").forEach(n => n.classList.remove("selected"));
   if (nodeEl.classList.contains("pipe-node")) nodeEl.classList.add("selected");

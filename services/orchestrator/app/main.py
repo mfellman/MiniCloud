@@ -554,6 +554,7 @@ def get_workflow_detail(workflow_name: str) -> dict:
         "name": doc.name,
         "group": doc.group,
         "invocation": doc.invocation.model_dump(),
+        "example_payloads": [p.model_dump(mode="json") for p in doc.example_payloads],
         "step_count": len(doc.steps),
         "step_types": sorted({getattr(s, "type", "unknown") for s in doc.steps}),
         "steps": [s.model_dump(mode="json") for s in doc.steps],

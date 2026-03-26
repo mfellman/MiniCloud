@@ -563,10 +563,18 @@ class InvocationConfig(BaseModel):
     allow_schedule: bool = False
 
 
+class WorkflowExamplePayload(BaseModel):
+    """Named JSON payload example shown in dashboard workflow design."""
+
+    name: str = Field(..., min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class WorkflowDoc(BaseModel):
     name: str
     group: str = Field(default="General", description="Organisatorische groep voor het dashboard")
     invocation: InvocationConfig = Field(default_factory=InvocationConfig)
+    example_payloads: list[WorkflowExamplePayload] = Field(default_factory=list)
     steps: list[WorkflowStep]
 
     @model_validator(mode="after")
