@@ -31,9 +31,12 @@ declare -A SERVICES=(
   [gateway]="services/gateway"
   [orchestrator]="services/orchestrator"
   [transformers]="services/transformers"
+  [storage]="services/storage"
+  [identity]="services/identity"
   [egress-http]="services/egressServices/http"
   [egress-ftp]="services/egressServices/ftp"
   [egress-ssh]="services/egressServices/ssh"
+  [egress-rabbitmq]="services/egressServices/rabbitmq"
   [dashboard]="services/dashboard"
 )
 
@@ -66,7 +69,8 @@ build_push() {
 # Optioneel: alleen bepaalde services bouwen (argumenten)
 TARGETS=("$@")
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  TARGETS=("gateway" "orchestrator" "transformers" "egress-http" "egress-ftp" "egress-ssh" "dashboard")
+  TARGETS=("gateway" "orchestrator" "transformers" "storage" "identity" "egress-http" "egress-ftp" "egress-ssh" "dashboard")
+  TARGETS+=("egress-rabbitmq")
 fi
 
 FAILED=()

@@ -15,8 +15,17 @@
       <span>MiniCloud</span>
     </div>
     <div class="topbar-right">
+      <div class="theme-switch">
+        <label for="themeSelect" class="visually-hidden">Theme</label>
+        <select id="themeSelect" class="topbar-theme-select" aria-label="Theme selection">
+          <option value="auto">Auto</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
       <nav class="breadcrumb" id="breadcrumb"></nav>
       <div class="topbar-status" id="connStatus">Connecting&#8230;</div>
+      <button class="btn hidden" id="btnSignOut">Sign out</button>
     </div>
   </header>
 
@@ -26,6 +35,14 @@
       <div class="sidebar-section">
         <h3>Workflows</h3>
         <ul id="workflowTree"></ul>
+      </div>
+      <div class="sidebar-section">
+        <h3>Broker</h3>
+        <ul class="nav-list">
+          <li class="nav-item" id="navRabbitMQ">RabbitMQ</li>
+          <li class="nav-item" id="navStorage">Storage</li>
+          <li class="nav-item" id="navAccess">Access</li>
+        </ul>
       </div>
     </aside>
 
@@ -82,6 +99,192 @@
         <div class="run-detail-meta" id="runMeta"></div>
         <div class="hidden run-error" id="runError"></div>
         <div class="graph-container" id="runGraph"></div>
+      </div>
+
+      <!-- RabbitMQ view -->
+      <div class="hidden" id="rabbitPanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2>RabbitMQ</h2>
+            <div class="wf-group-label" id="rabbitSubtitle">Inspect broker queues, exchanges and messages.</div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn" id="btnRabbitRefresh">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <div class="rabbit-status" id="rabbitStatus"></div>
+
+        <div class="stat-cards" id="rabbitOverviewCards"></div>
+
+        <div class="rabbit-grid">
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Queues</h3>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Messages</th>
+                    <th>Consumers</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="rabbitQueuesBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Exchanges</h3>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Durable</th>
+                  </tr>
+                </thead>
+                <tbody id="rabbitExchangesBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="rabbit-card rabbit-peek-card">
+          <div class="rabbit-card-header">
+            <h3>Peek Messages</h3>
+          </div>
+          <div class="rabbit-peek-controls">
+            <input id="rabbitPeekQueue" type="text" placeholder="queue name" />
+            <input id="rabbitPeekCount" type="number" value="10" min="1" max="100" />
+            <button class="btn btn-primary" id="btnRabbitPeek">Peek</button>
+          </div>
+          <pre id="rabbitPeekOutput" class="code-block">Select a queue and click Peek.</pre>
+        </section>
+      </div>
+
+      <!-- Storage view -->
+      <div class="hidden" id="storagePanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2>Storage Browser</h2>
+            <div class="wf-group-label">Browse buckets and keys in the storage service.</div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn" id="btnStorageRefresh">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <div class="rabbit-status" id="storageStatus"></div>
+
+        <div class="rabbit-grid">
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Buckets</h3>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Bucket</th>
+                  </tr>
+                </thead>
+                <tbody id="storageBucketsBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rabbit-card">
+            <div class="rabbit-card-header">
+              <h3>Keys</h3>
+            </div>
+            <div class="rabbit-peek-controls">
+              <input id="storagePrefix" type="text" placeholder="prefix (optional)" />
+              <input id="storageKeyFilter" type="text" placeholder="filter in loaded keys" />
+              <button class="btn" id="btnStorageLoadKeys">Load</button>
+            </div>
+            <div class="storage-pager" id="storagePager">
+              <button class="btn" id="btnStoragePrevPage">Prev</button>
+              <span id="storagePageInfo">Page 1 / 1</span>
+              <button class="btn" id="btnStorageNextPage">Next</button>
+            </div>
+            <div class="run-table-wrap">
+              <table class="run-table">
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                  </tr>
+                </thead>
+                <tbody id="storageKeysBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="rabbit-card rabbit-peek-card">
+          <div class="rabbit-card-header">
+            <h3>Object</h3>
+            <button class="btn" id="btnStorageDownload">Download</button>
+          </div>
+          <pre id="storageObjectOutput" class="code-block">Select a key to inspect its object.</pre>
+        </section>
+      </div>
+
+      <!-- Access / IAM view -->
+      <div class="hidden" id="accessPanel">
+        <div class="wf-detail-header">
+          <div class="wf-detail-info">
+            <h2>Access Control</h2>
+            <div class="wf-group-label">Authenticate and manage workflow run/re-trigger permissions.</div>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn" id="btnAccessRefresh">&#x21bb; Refresh</button>
+          </div>
+        </div>
+
+        <div class="rabbit-status" id="accessStatus"></div>
+
+        <section class="rabbit-card" id="accessLoginCard">
+          <div class="rabbit-card-header">
+            <h3>Sign In</h3>
+          </div>
+          <div class="access-login-row">
+            <input id="accessLoginUsername" type="text" placeholder="username" />
+            <input id="accessLoginPassword" type="password" placeholder="password" />
+            <button class="btn btn-primary" id="btnAccessLogin">Sign in</button>
+          </div>
+        </section>
+
+        <section class="rabbit-card hidden" id="accessAdminCard">
+          <div class="rabbit-card-header">
+            <h3>User Rights</h3>
+          </div>
+          <div class="access-admin-grid">
+            <div>
+              <label for="accessUserSelect">User</label>
+              <select id="accessUserSelect"></select>
+            </div>
+            <div>
+              <label for="accessWorkflowSelect">Workflow</label>
+              <select id="accessWorkflowSelect"></select>
+            </div>
+          </div>
+          <div class="access-rights-row">
+            <label><input id="permRunAny" type="checkbox" /> run any workflow</label>
+            <label><input id="permRetriggerAny" type="checkbox" /> re-trigger any workflow</label>
+            <label><input id="permRunSelected" type="checkbox" /> run selected workflow</label>
+            <label><input id="permRetriggerSelected" type="checkbox" /> re-trigger selected workflow</label>
+          </div>
+          <div class="wf-detail-actions">
+            <button class="btn btn-primary" id="btnAccessSave">Save permissions</button>
+          </div>
+        </section>
       </div>
     </main>
 

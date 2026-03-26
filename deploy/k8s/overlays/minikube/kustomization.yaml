@@ -1,0 +1,169 @@
+# Minikube overlay — lokale ontwikkeling op Windows met minikube.
+#
+# Gebruik via deploy-minikube.ps1 (in de repo root).
+# Handmatig:
+#   kubectl apply -k deploy/k8s/overlays/minikube
+#
+# Vereisten: minikube, kubectl, Docker Desktop (of een andere Docker-engine).
+# Images worden gebouwd in de minikube-docker-daemon (geen push nodig).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: minicloud
+
+resources:
+  - ../../
+
+# Zet imagePullPolicy op Never voor alle custom (minicloud/) images,
+# zodat Kubernetes de lokaal gebouwde images gebruikt en niet probeert
+# te pullen van een registry.
+patches:
+  - target:
+      kind: Deployment
+      name: gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: gateway
+      spec:
+        template:
+          spec:
+            containers:
+              - name: gateway
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: orchestrator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: orchestrator
+      spec:
+        template:
+          spec:
+            containers:
+              - name: orchestrator
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: storage
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: storage
+      spec:
+        template:
+          spec:
+            containers:
+              - name: storage
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: identity
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: identity
+      spec:
+        template:
+          spec:
+            containers:
+              - name: identity
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: transformers
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: transformers
+      spec:
+        template:
+          spec:
+            containers:
+              - name: transformers
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: egress-http
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: egress-http
+      spec:
+        template:
+          spec:
+            containers:
+              - name: egress-http
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: egress-ftp
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: egress-ftp
+      spec:
+        template:
+          spec:
+            containers:
+              - name: egress-ftp
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: egress-ssh
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: egress-ssh
+      spec:
+        template:
+          spec:
+            containers:
+              - name: egress-ssh
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: egress-rabbitmq
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: egress-rabbitmq
+      spec:
+        template:
+          spec:
+            containers:
+              - name: egress-rabbitmq
+                imagePullPolicy: Never
+
+  - target:
+      kind: Deployment
+      name: dashboard
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: dashboard
+      spec:
+        template:
+          spec:
+            containers:
+              - name: dashboard
+                imagePullPolicy: Never

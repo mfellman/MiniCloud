@@ -24,8 +24,36 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: GATEWAY_URL
+              value: "http://gateway:8080"
             - name: ORCHESTRATOR_URL
               value: "http://orchestrator:8080"
+            - name: STORAGE_SERVICE_URL
+              value: "http://storage:8080"
+            - name: IDENTITY_URL
+              value: "http://identity:8080"
+            - name: STORAGE_ROLES
+              value: "orchestrator"
+            - name: DASH_AUTH_ENABLED
+              value: "false"
+            # Optional dashboard basic auth
+            # - name: DASH_AUTH_USERNAME
+            #   value: "admin"
+            # - name: DASH_AUTH_PASSWORD
+            #   value: "change-me"
+            - name: DASH_RABBITMQ_INSPECT_ENABLED
+              value: "true"
+            - name: RABBITMQ_MANAGEMENT_URL
+              value: "http://rabbitmq:15672/api"
+            - name: RABBITMQ_MANAGEMENT_USER
+              value: "guest"
+            - name: RABBITMQ_MANAGEMENT_PASSWORD
+              value: "guest"
+            - name: RABBITMQ_MANAGEMENT_VHOST
+              value: "/"
+            # STORAGE_READ_TOKEN: set if STORAGE_SERVICE_READ_TOKEN is configured
+            # - name: STORAGE_READ_TOKEN
+            #   value: ""
           resources:
             requests:
               cpu: 50m

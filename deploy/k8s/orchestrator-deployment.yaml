@@ -42,6 +42,10 @@ spec:
               value: http://egress-ftp:8080
             - name: EGRESS_SSH_URL
               value: http://egress-ssh:8080
+            - name: EGRESS_RABBITMQ_URL
+              value: http://egress-rabbitmq:8080
+            - name: STORAGE_SERVICE_URL
+              value: http://storage:8080
             - name: WORKFLOWS_DIR
               value: /app/workflows
             - name: CONNECTIONS_DIR
@@ -72,6 +76,35 @@ spec:
             #   value: "https://idp.example.com/realms/yourrealm"
             # - name: OAUTH2_AUDIENCE
             #   value: "minicloud-orchestrator"
+            # RabbitMQ trigger (topic pub/sub). Message body is workflow input payload.
+            # Workflow selection: header Workflow, or Domain/Service/Action/Version.
+            - name: RABBITMQ_TRIGGER_ENABLED
+              value: "true"
+            - name: RABBITMQ_TRIGGER_URL
+              value: "amqp://guest:guest@rabbitmq:5672/"
+            - name: RABBITMQ_TRIGGER_EXCHANGE
+              value: "minicloud.events"
+            - name: RABBITMQ_TRIGGER_EXCHANGE_TYPE
+              value: "topic"
+            - name: RABBITMQ_TRIGGER_QUEUE
+              value: "orchestrator-rabbitmq-trigger"
+            - name: RABBITMQ_TRIGGER_BINDING_KEY
+              value: "storage.kv.updated.#"
+            # Dedicated route for storage change events:
+              - name: OAUTH2_ENABLED
+                value: "true"
+              - name: OAUTH2_JWT_SHARED_SECRET
+                value: "change-me-minicloud-identity"
+              - name: OAUTH2_ISSUER
+                value: "minicloud-identity"
+              - name: OAUTH2_AUDIENCE
+                value: "minicloud"
+            - name: RABBITMQ_TRIGGER_STORAGE_CHANGED_WORKFLOW
+              value: "storage.kv.updated.1"
+            - name: RABBITMQ_TRIGGER_STORAGE_BUCKET_ALLOW
+              value: "*"
+            - name: RABBITMQ_TRIGGER_STORAGE_KEY_ALLOW
+              value: "*"
           ports:
             - name: http
               containerPort: 8080

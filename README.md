@@ -1,6 +1,6 @@
 # MiniCloud
 
-MiniCloud is a lightweight chain of microservices deployable on **Kubernetes**: a **gateway** (entry point), an **orchestrator** (YAML-driven workflows), a **transformers** service (**XSLT 1.0**, **xml2json**, **json2xml**, **Liquid**), and **egress** services for outbound **HTTP**, **FTP/FTPS**, **SSH**, and **SFTP**. The goal is similar to a minimal integration/orchestration layer (in the spirit of n8n or cloud integration), but with explicit steps and fixed building blocks.
+MiniCloud is a lightweight chain of microservices deployable on **Kubernetes**: a **gateway** (entry point), an **orchestrator** (YAML-driven workflows), a **transformers** service (**XSLT 1.0**, **xml2json**, **json2xml**, **Liquid**), a **storage** service (runtime docs + key/value data), and **egress** services for outbound **HTTP**, **FTP/FTPS**, **SSH**, and **SFTP**. The goal is similar to a minimal integration/orchestration layer (in the spirit of n8n or cloud integration), but with explicit steps and fixed building blocks.
 
 ### Additional documentation
 
@@ -8,6 +8,8 @@ MiniCloud is a lightweight chain of microservices deployable on **Kubernetes**: 
 - **[OAuth2 / scopes (orchestrator)](docs/oauth-authorization.md)** — JWT (JWKS), scopes for workflow run + egress, IdP configuration.
 - **[Workflow YAML (in depth)](docs/workflows.md)** — file conventions, `invocation`, steps, `input_from` / `body_from`, data flow.
 - **[Kubernetes (in depth)](docs/kubernetes.md)** — Kustomize, ConfigMaps, images, kind script, Ingress, updates, and security notes.
+- **[RabbitMQ on Kubernetes](docs/rabbitmq-kubernetes.md)** — run your own RabbitMQ broker (PVC, secrets, topic/pub-sub conventions, trigger wiring).
+- **[Storage ACL and Security](docs/storage-acl.md)** — simple and secure role-based access for storage read/write, with quick-start modes and examples.
 - **[Deploy on Kubernetes (GitLab Registry)](docs/deployment-kubernetes-gitlab.md)** — full stack on a cluster with GitLab-built images, pull secrets, and the `deploy/k8s/overlays/gitlab` overlay.
 - **[GitLab (repo + CI + registry)](docs/gitlab.md)** — creating the project, Container Registry, [`.gitlab-ci.yml`](.gitlab-ci.yml), using images in Kubernetes.
 - **[Enterprise security hardening](docs/security-enterprise-hardening.md)** — checklist: identity, secrets, egress/SSRF, network, observability, supply chain, and prioritization.
@@ -41,11 +43,13 @@ flowchart LR
   gw[Gateway]
   orch[Orchestrator]
   tr[Transformers]
+  st[Storage]
   ehttp[egress-http]
   dash[Dashboard]
   gw -->|"/ v1/run, /v1/transform"| orch
   gw -->|direct xslt| tr
   orch -->|"/applyXSLT /xml2json ..."| tr
+  orch -->|"storage_read/storage_write"| st
   orch -->|"/call"| ehttp
   dash -->|"workflows, traces"| orch
 ```
@@ -71,9 +75,12 @@ flowchart LR
 | **gateway** | Public API: health, direct XSLT via transformers, starting workflows (URL or JSON body). | 8080 |
 | **orchestrator** | Loads `*.yaml` workflows, runs steps, enforces HTTP vs schedule policy. | 8083 |
 | **transformers** | All transforms: `/applyXSLT` (XSLT 1.0), `/xml2json`, `/json2xml`, `/applyLiquid` ([python-liquid](https://pypi.org/project/python-liquid/)). | 8081 |
+| **storage** | Runtime storage API for workflow/connection documents and workflow-accessible key/value read/write. | 8086 |
 | **egress-http** | Outbound HTTP for workflows: `POST /call`. | 8082 |
 | **egress-ftp** | Outbound FTP/FTPS: `POST /ftp`. | 8084 |
 | **egress-ssh** | Outbound SSH: `POST /exec` (command); `POST /sftp` (files over SFTP). | 8085 |
+| **egress-rabbitmq** | Outbound RabbitMQ publish for workflows: `POST /publish`. | 8087 |
+| **rabbitmq** | Topic broker for pub/sub events and optional workflow triggers. | 5672 / 15672 |
 | **dashboard** | Web GUI: visual workflow graphs, run history with status, step-level input/output inspection. | 8090 |
 
 ---
@@ -81,6 +88,8 @@ flowchart LR
 ## Workflows (YAML)
 
 Workflow files live in a directory (in containers, default `/app/workflows`). Each workflow is one YAML document with at least a **`name`**, optional **`invocation`**, and a list of **`steps`**.
+
+Included examples now also contain `storage_changed_trigger`, intended for RabbitMQ-driven storage update events (`allow_schedule: true`, `allow_http: false`).
 
 **New to authoring pipelines?** Start with the **[User guide: writing orchestrations](docs/user-guide-orchestrations.md)**; the sections below are a compact reference.
 
@@ -192,6 +201,32 @@ Under `sftp`:
 
 Step output is JSON from the egress service.
 
+### Step `type: rabbitmq_publish`
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `type` | yes | Must be `rabbitmq_publish`. |
+| `id` | yes | Unique id within the workflow. |
+| `connection` | no | Optional named `rabbitmq` connection from `connections/*.yaml`. |
+| `rabbitmq` | yes | Object with publish options below. |
+
+Under `rabbitmq`:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `url` | if no `connection` | AMQP URL (e.g. `amqp://guest:guest@rabbitmq:5672/`). |
+| `exchange` | no | Exchange name (default `minicloud.events`). |
+| `exchange_type` | no | `topic`, `direct`, `fanout`, `headers` (default `topic`). |
+| `routing_key` | no | Topic key. If omitted and `Domain/Service/Action/Version` properties exist, derived automatically. |
+| `message_from` | yes | Message body source: `initial`, `previous`, step id, or context ref. |
+| `properties` | no | Static message properties (recommended: `Domain`, `Service`, `Action`, `Version`). |
+| `property_refs` | no | Dynamic property values from refs. |
+| `headers` | no | Extra broker headers. |
+| `persistent` | no | Durable message flag (default `true`). |
+| `content_type` | no | Message content type (default `text/plain`). |
+
+Step output is JSON from **egress-rabbitmq**.
+
 ### Step `type: xml2json`
 
 | Field | Required | Description |
@@ -262,7 +297,7 @@ This lets you run batch workflows only from an internal scheduler while interact
 | Mode | Configuration |
 |------|----------------|
 | **Shared secret (simple)** | Set **`HTTP_INVOCATION_TOKEN`** and/or **`SCHEDULE_INVOCATION_TOKEN`**. Requires `Authorization: Bearer <secret>`. |
-| **OAuth2 / OIDC (fine-grained)** | Set **`OAUTH2_ENABLED=true`**, **`OAUTH2_JWKS_URI`**, and usually **`OAUTH2_ISSUER`** / **`OAUTH2_AUDIENCE`**. The access token must be a **JWT**; scopes control **which workflows** may run and **which egress types** (`http`, `ftp`, `ssh`, `sftp`) are allowed. See **[OAuth2 / scopes](docs/oauth-authorization.md)**. |
+| **OAuth2 / OIDC (fine-grained)** | Set **`OAUTH2_ENABLED=true`**, then configure JWT validation via **`OAUTH2_JWKS_URI`** (RS/ES) or **`OAUTH2_JWT_SHARED_SECRET`** (HS256), plus usually **`OAUTH2_ISSUER`** / **`OAUTH2_AUDIENCE`**. Scopes control **which workflows** may run and **which egress types** (`http`, `ftp`, `ssh`, `sftp`) are allowed. See **[OAuth2 / scopes](docs/oauth-authorization.md)**. |
 
 When **`OAUTH2_ENABLED`** is on, static **`HTTP_INVOCATION_TOKEN`** / **`SCHEDULE_INVOCATION_TOKEN`** are **not** used for those routes (JWT replaces them). The gateway **forwards** `Authorization` for `/v1/run*`.
 
@@ -338,7 +373,7 @@ Response is JSON with `status_code`, `headers`, `body` (text).
 | `ORCHESTRATOR_RUN_PATH` | `/run` | Path for legacy `POST /v1/run`. |
 | `ORCHESTRATOR_TIMEOUT_SECONDS` | `120` | Timeout to orchestrator. |
 | `STATUS_PROBE_TIMEOUT_SECONDS` | `3` | Per-request timeout for each backend probe in `GET /v1/status`. |
-| `EGRESS_HTTP_URL`, `EGRESS_FTP_URL`, `EGRESS_SSH_URL` | *(empty)* | If set on the gateway, included in `/v1/status` (optional; orchestrator already has its own egress config). |
+| `EGRESS_HTTP_URL`, `EGRESS_FTP_URL`, `EGRESS_SSH_URL`, `EGRESS_RABBITMQ_URL` | *(empty)* | If set on the gateway, included in `/v1/status` (optional; orchestrator already has its own egress config). |
 | `GITLAB_PIPELINE_URL`, `GITLAB_PROJECT_URL` | *(empty)* | Optional links in the `/v1/status` **`tests`** block. |
 | `LOG_LEVEL` | `INFO` | Log level. |
 
@@ -351,11 +386,23 @@ Response is JSON with `status_code`, `headers`, `body` (text).
 | `EGRESS_HTTP_URL`, `EGRESS_HTTP_PATH` | see code | Base URL and path for outbound HTTP (`…/call`). Legacy: `HTTP_CALL_URL` / `HTTP_CALL_PATH`. |
 | `EGRESS_FTP_URL` | see code | **egress-ftp** base URL (orchestrator appends `/ftp`). |
 | `EGRESS_SSH_URL` | see code | **egress-ssh** base URL (orchestrator appends `/exec` and `/sftp`). |
+| `EGRESS_RABBITMQ_URL` | see code | **egress-rabbitmq** base URL (orchestrator calls `/publish`). |
+| `RABBITMQ_TRIGGER_ENABLED` | `false` | If `true`, orchestrator consumes RabbitMQ messages and triggers scheduled workflows. |
+| `RABBITMQ_TRIGGER_URL` | `amqp://guest:guest@rabbitmq:5672/` | AMQP URL for trigger consumer. |
+| `RABBITMQ_TRIGGER_EXCHANGE`, `RABBITMQ_TRIGGER_EXCHANGE_TYPE` | `minicloud.events`, `topic` | Exchange used for trigger subscriptions. |
+| `RABBITMQ_TRIGGER_QUEUE` | `orchestrator-trigger` | Trigger queue name. |
+| `RABBITMQ_TRIGGER_BINDING_KEY` | `#` | Binding pattern for subscription. |
+| `RABBITMQ_TRIGGER_WORKFLOW` | *(empty)* | Optional fixed workflow name override for all consumed messages. |
+| `RABBITMQ_TRIGGER_STORAGE_CHANGED_WORKFLOW` | *(empty)* | Dedicated workflow for storage changed events (`Domain=Storage`, `Service=KV`, `Action=Updated`). |
+| `RABBITMQ_TRIGGER_STORAGE_BUCKET_ALLOW` | *(empty)* | Optional comma-separated glob patterns for `Bucket` property (e.g. `demo,prod-*`). |
+| `RABBITMQ_TRIGGER_STORAGE_KEY_ALLOW` | *(empty)* | Optional comma-separated glob patterns for `Key` property (e.g. `payloads/*`). |
+| `RABBITMQ_TRIGGER_REQUEUE_ON_ERROR` | `false` | If `true`, failed messages are requeued. |
 | `ORCH_TIMEOUT_SECONDS` | `120` | HTTP client timeout per workflow run. |
 | `HTTP_INVOCATION_TOKEN` | *(empty)* | If set (and **`OAUTH2_ENABLED`** is off): shared-secret Bearer on **`POST /run`**. |
 | `SCHEDULE_INVOCATION_TOKEN` | *(empty)* | If set (and OAuth not used for scheduled): Bearer on **`POST /invoke/scheduled`**. |
-| `OAUTH2_ENABLED` | `false` | If `true`: validate JWT via JWKS; enforce scopes (see **[oauth-authorization.md](docs/oauth-authorization.md)**). |
-| `OAUTH2_JWKS_URI` | *(empty)* | JWKS URL (required if OAuth enabled). |
+| `OAUTH2_ENABLED` | `false` | If `true`: validate JWT and enforce scopes (see **[oauth-authorization.md](docs/oauth-authorization.md)**). |
+| `OAUTH2_JWKS_URI` | *(empty)* | JWKS URL for RS256/ES256 validation (required unless `OAUTH2_JWT_SHARED_SECRET` is set). |
+| `OAUTH2_JWT_SHARED_SECRET` | *(empty)* | Optional HS256 shared secret for local/internal identity tokens (alternative to JWKS). |
 | `OAUTH2_ISSUER`, `OAUTH2_AUDIENCE` | *(empty)* | JWT `iss` / `aud` validation (recommended). |
 | `OAUTH2_SCOPE_PREFIX` | `minicloud` | Prefix for scope strings in tokens. |
 | `OAUTH2_APPLY_TO_SCHEDULED` | `true` | If `false` with OAuth on, scheduled route uses **`SCHEDULE_INVOCATION_TOKEN`** only (no egress scope checks on that path). |
@@ -382,6 +429,38 @@ Response is JSON with `status_code`, `headers`, `body` (text).
 |----------|---------|---------|
 | `SSH_EGRESS_TIMEOUT_SECONDS` | `60` | Default timeout. |
 | `SSH_EGRESS_ALLOWED_HOSTS` | *(empty)* | Allowed SSH hostnames (empty = no filter). |
+
+### Egress RabbitMQ
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `RABBITMQ_URL` | `amqp://guest:guest@rabbitmq:5672/` | Default AMQP URL. |
+| `RABBITMQ_EXCHANGE` | `minicloud.events` | Default exchange name. |
+| `RABBITMQ_EXCHANGE_TYPE` | `topic` | Default exchange type. |
+
+### Storage
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `STORAGE_ACL_ENABLED` | `true` | Enables ACL enforcement on `GET/PUT /v1/storage/*`. |
+| `STORAGE_DEFAULT_ROLE` | `orchestrator` | Fallback caller role when `X-Storage-Roles` header is absent. |
+| `STORAGE_ACL_READ_ROLES` | `orchestrator` | Comma-separated roles allowed to read by default. |
+| `STORAGE_ACL_WRITE_ROLES` | `orchestrator` | Comma-separated roles allowed to write by default. |
+| `STORAGE_ACL_BUCKET_OVERRIDES` | *(empty)* | Optional JSON object with per-bucket `read_roles` and `write_roles`. |
+| `STORAGE_ACL_POLICY` | *(empty)* | Full JSON policy (`default` + `buckets`). Overrides simple ACL vars when set. |
+| `STORAGE_SERVICE_READ_TOKEN` | *(empty)* | Optional Bearer token required for storage read endpoints. |
+| `STORAGE_SERVICE_WRITE_TOKEN` | *(empty)* | Optional Bearer token required for storage write endpoints. |
+| `STORAGE_SERVICE_ADMIN_TOKEN` | *(empty)* | Optional Bearer token for internal runtime admin endpoints. |
+| `STORAGE_EVENT_ENABLED` | `false` | If `true`, each successful storage write emits a RabbitMQ event via egress-rabbitmq. |
+| `STORAGE_EVENT_REQUIRED` | `false` | If `true`, write fails when event publish fails. |
+| `STORAGE_EVENT_EGRESS_URL` | `http://egress-rabbitmq:8080/publish` | Publish endpoint used by storage service. |
+| `STORAGE_EVENT_TIMEOUT_SECONDS` | `5` | Timeout for event publish call. |
+| `STORAGE_EVENT_DOMAIN` | `Storage` | Event property `Domain`. |
+| `STORAGE_EVENT_SERVICE` | `KV` | Event property `Service`. |
+| `STORAGE_EVENT_ACTION` | `Updated` | Event property `Action`. |
+| `STORAGE_EVENT_VERSION` | `1` | Event property `Version`. |
+
+ACL tuning guide with practical examples is documented in **[docs/storage-acl.md](docs/storage-acl.md)**.
 
 ### Transformers
 
@@ -425,7 +504,10 @@ Host ports:
 | 8083 | orchestrator |
 | 8084 | egress-ftp |
 | 8085 | egress-ssh |
+| 8087 | egress-rabbitmq |
 | 8090 | dashboard (GUI) |
+| 5672 | rabbitmq AMQP |
+| 15672 | rabbitmq management UI |
 
 Workflows are bind-mounted from `services/orchestrator/workflows` (read-only). YAML changes are visible after restarting the orchestrator container (or rebuild if workflows are baked into the image).
 
@@ -490,6 +572,8 @@ The **dashboard** is a separate service that provides a visual web interface for
 | **Step detail drill-down** | Click any step to open a side panel with three tabs: **Input** (full request/data sent to the step), **Output** (full response), and **Info** (step definition + trace metadata like duration, status, context snapshot). |
 | **Loop support** | `for_each` and `repeat_until` loops are rendered as nested containers showing iteration count and child steps. |
 | **Conditional indicators** | Steps with `when` conditions show the condition inline on the graph node. |
+| **RabbitMQ inspect API (prep)** | Optional read-only backend endpoints for overview, queues, exchanges, and non-destructive message peek (`ack_requeue_true`). |
+| **Storage browser** | Read-only browser for buckets, keys, and stored objects via dashboard backend proxy. |
 
 ### Enabling traces
 
@@ -537,12 +621,94 @@ Or use the Ingress rule at `/dashboard` if you have an Ingress controller config
 | Variable | Default | Meaning |
 |----------|---------|--------|
 | `ORCHESTRATOR_URL` | `http://localhost:8083` | URL of the orchestrator service. In Docker Compose / K8s: `http://orchestrator:8080`. |
+| `STORAGE_SERVICE_URL` | `http://localhost:8086` | URL of the storage service. In Docker Compose / K8s: `http://storage:8080`. |
+| `IDENTITY_URL` | `http://localhost:8088` | URL of the identity service used by dashboard access control (Compose/K8s: `http://identity:8080`). |
+| `STORAGE_READ_TOKEN` | *(empty)* | Optional Bearer token forwarded to storage read endpoints when `STORAGE_SERVICE_READ_TOKEN` is configured on storage. |
+| `STORAGE_ROLES` | `orchestrator` | Roles forwarded as `X-Storage-Roles` when browsing storage from dashboard. |
 | `DASH_TIMEOUT_SECONDS` | `30` | Timeout for API calls from dashboard to orchestrator. |
+| `DASH_AUTH_ENABLED` | `false` | Protect dashboard UI and API with HTTP Basic authentication (except `/healthz`). |
+| `DASH_AUTH_USERNAME` | *(empty)* | Username for dashboard Basic authentication when enabled. |
+| `DASH_AUTH_PASSWORD` | *(empty)* | Password for dashboard Basic authentication when enabled. |
+| `DASH_AUTH_PASSWORD_SHA256` | *(empty)* | Optional SHA-256 hex hash alternative to plain-text password; used when set. |
+| `DASH_RABBITMQ_INSPECT_ENABLED` | `false` | Enable dashboard backend RabbitMQ inspection endpoints. |
+| `RABBITMQ_MANAGEMENT_URL` | `http://localhost:15672/api` | RabbitMQ Management HTTP API base URL. |
+| `RABBITMQ_MANAGEMENT_USER` | *(empty)* | Optional username for RabbitMQ Management API basic auth. |
+| `RABBITMQ_MANAGEMENT_PASSWORD` | *(empty)* | Optional password for RabbitMQ Management API basic auth. |
+| `RABBITMQ_MANAGEMENT_VHOST` | `/` | VHost used for queue/exchange listing and message peeking. |
 | `LOG_LEVEL` | `INFO` | Log level. |
 
 ### Architecture note
 
 The dashboard proxies all data requests through its own backend to the orchestrator, so the browser only talks to the dashboard service (no CORS issues, no direct orchestrator exposure). The orchestrator exposes read-only trace endpoints (`GET /api/traces`, `GET /api/traces/{id}`, `GET /api/traces/{id}/steps/{path}/{kind}`) and a workflow detail endpoint (`GET /workflows/{name}`).
+
+If `DASH_RABBITMQ_INSPECT_ENABLED=true`, dashboard also exposes RabbitMQ read-only proxy endpoints:
+
+- `GET /api/rabbitmq/status`
+- `GET /api/rabbitmq/overview`
+- `GET /api/rabbitmq/queues`
+- `GET /api/rabbitmq/exchanges`
+- `GET /api/rabbitmq/messages/peek?queue=<name>&count=20`
+
+The storage browser uses these dashboard proxy endpoints:
+
+- `GET /api/storage/status`
+- `GET /api/storage/buckets`
+- `GET /api/storage/keys?bucket=<name>&prefix=<optional>`
+- `GET /api/storage/object?bucket=<name>&key=<path>`
+
+Workflow trigger from browser (design view) uses:
+
+- `POST /api/run/{workflow_name}` with body `{"xml": "..."}`
+
+Identity / IAM endpoints proxied by dashboard backend:
+
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `GET /api/iam/users`
+- `GET /api/iam/permissions`
+- `GET /api/iam/users/{username}/permissions`
+- `PUT /api/iam/users/{username}/permissions`
+
+Default identity users for local development:
+
+- `admin` / `admin` (admins group, full `minicloud:*`)
+- `operator` / `operator` (workflow run + re-trigger wildcard permissions)
+- `viewer` / `viewer` (read-only, no run rights)
+
+The design trigger supports per-workflow payload presets (save/select/delete) in browser local storage.
+
+Storage browser UX supports key filtering, client-side paging, and object download.
+
+For secure dashboard auth, prefer `DASH_AUTH_PASSWORD_SHA256` instead of plain `DASH_AUTH_PASSWORD`.
+You can generate the SHA-256 hash with:
+
+```bash
+python -c "import hashlib; print(hashlib.sha256(b'your-password').hexdigest())"
+```
+
+Ready-to-use dashboard env examples:
+
+- `.env.dashboard.shared-dev.example`
+- `.env.dashboard.production.example`
+
+### Dashboard security quick-start
+
+Use these baseline profiles for fast and safe setup:
+
+| Profile | Recommended settings |
+|---------|----------------------|
+| Local development | `DASH_AUTH_ENABLED=false`, `DASH_RABBITMQ_INSPECT_ENABLED=true` only when needed, `STORAGE_ROLES=orchestrator`. |
+| Shared dev/test | `DASH_AUTH_ENABLED=true`, set `DASH_AUTH_USERNAME`, use `DASH_AUTH_PASSWORD_SHA256`, set `DASH_RABBITMQ_INSPECT_ENABLED=false` unless actively debugging. |
+| Production | `DASH_AUTH_ENABLED=true`, always use `DASH_AUTH_PASSWORD_SHA256`, keep `DASH_RABBITMQ_INSPECT_ENABLED=false` by default, set `STORAGE_READ_TOKEN` if storage requires service tokens, expose dashboard only behind TLS/reverse proxy. |
+
+Minimum hardened production checklist:
+
+1. Enable dashboard auth and set a strong username + SHA-256 password hash.
+2. Terminate TLS at ingress/reverse proxy and do not expose internal services directly.
+3. Keep RabbitMQ inspect API disabled unless there is an explicit operational need.
+4. Use least-privilege storage roles in `STORAGE_ROLES` and set `STORAGE_READ_TOKEN` when storage token auth is enabled.
+5. Keep logs at `INFO` or stricter in production and avoid printing secrets in environment dumps.
 
 ---
 

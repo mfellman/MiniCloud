@@ -1,0 +1,102 @@
+# PRD overlay — één cluster, namespace: minicloud-prd
+#
+# Apply:  kubectl apply -k deploy/k8s/overlays/prd
+# Image tags: :latest  (of pin op een SHA voor reproducibility: newTag: sha-abc123)
+#
+# ACL-profiel: prod (least privilege; strict mode optioneel via STORAGE_DEFAULT_ROLE="")
+# Replicas:    orchestrator=2 voor beschikbaarheid
+#
+# AANBEVELING voor secrets in PRD:
+#   Gebruik Kubernetes Secrets + secretKeyRef i.p.v. plain env vars hieronder.
+#   Genereer tokens met: openssl rand -hex 32
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: minicloud-prd
+
+resources:
+  - ../../
+
+images:
+  - name: minicloud/gateway
+    newTag: latest
+  - name: minicloud/orchestrator
+    newTag: latest
+  - name: minicloud/transformers
+    newTag: latest
+  - name: minicloud/storage
+    newTag: latest
+  - name: minicloud/identity
+    newTag: latest
+  - name: minicloud/egress-http
+    newTag: latest
+  - name: minicloud/egress-ftp
+    newTag: latest
+  - name: minicloud/egress-ssh
+    newTag: latest
+  - name: minicloud/dashboard
+    newTag: latest
+
+patches:
+  # Orchestrator: http runtime store + hogere replica count
+  - target:
+      kind: Deployment
+      name: orchestrator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: orchestrator
+      spec:
+        replicas: 2
+        template:
+          spec:
+            containers:
+              - name: orchestrator
+                env:
+                  - name: ORCH_RUNTIME_STORE
+                    value: http
+                  - name: ORCH_STORAGE_BEARER_TOKEN
+                    value: ""   # vervang door secretKeyRef
+                  - name: ORCH_RELOAD_TOKEN
+                    value: ""   # vervang door secretKeyRef
+
+  # PRD ACL: least-privilege; schrijven uitsluitend orchestrator
+  - target:
+      kind: Deployment
+      name: storage
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: storage
+      spec:
+        template:
+          spec:
+            containers:
+              - name: storage
+                env:
+                  - name: STORAGE_ACL_READ_ROLES
+                    value: orchestrator,security-reader
+                  - name: STORAGE_ACL_WRITE_ROLES
+                    value: orchestrator
+                  # Strikte admin token voor YAML-upload
+                  - name: STORAGE_SERVICE_ADMIN_TOKEN
+                    value: ""   # vervang door secretKeyRef
+
+  # PRD PVC: groter volume voor productiedata
+  - target:
+      kind: PersistentVolumeClaim
+      name: storage-data
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 10Gi
+
+  - target:
+      kind: Ingress
+      name: gateway
+    patch: |-
+      - op: add
+        path: /spec/rules/0/host
+        value: minicloud.example.com

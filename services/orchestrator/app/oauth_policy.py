@@ -29,6 +29,7 @@ OAUTH2_APPLY_TO_SCHEDULED = os.environ.get("OAUTH2_APPLY_TO_SCHEDULED", "true").
     "on",
 )
 OAUTH2_JWKS_URI = os.environ.get("OAUTH2_JWKS_URI", "").strip()
+OAUTH2_JWT_SHARED_SECRET = os.environ.get("OAUTH2_JWT_SHARED_SECRET", "").strip()
 OAUTH2_ISSUER = os.environ.get("OAUTH2_ISSUER", "").strip()
 OAUTH2_AUDIENCE = os.environ.get("OAUTH2_AUDIENCE", "").strip() or None
 OAUTH2_SCOPE_PREFIX = os.environ.get("OAUTH2_SCOPE_PREFIX", "minicloud").strip().rstrip(":")
@@ -52,8 +53,8 @@ def _jwks() -> PyJWKClient:
 def validate_oauth_config_at_startup() -> None:
     if not OAUTH2_ENABLED:
         return
-    if not OAUTH2_JWKS_URI:
-        raise RuntimeError("OAUTH2_ENABLED requires OAUTH2_JWKS_URI")
+    if not OAUTH2_JWKS_URI and not OAUTH2_JWT_SHARED_SECRET:
+        raise RuntimeError("OAUTH2_ENABLED requires OAUTH2_JWKS_URI or OAUTH2_JWT_SHARED_SECRET")
     if not OAUTH2_ISSUER:
         LOG.warning(
             "OAUTH2_ISSUER is empty; JWT issuer verification is disabled (not recommended in production)",
@@ -77,15 +78,8 @@ def scopes_from_payload(payload: dict[str, Any]) -> frozenset[str]:
 
 
 def decode_access_token_jwt(bearer_token: str) -> dict[str, Any]:
-    """Verify signature (JWKS), optional iss/aud, return claims."""
-    try:
-        signing_key = _jwks().get_signing_key_from_jwt(bearer_token)
-    except Exception as e:
-        LOG.warning("JWKS / key resolve failed: %s", e)
-        raise HTTPException(status_code=401, detail="Invalid access token") from e
-
+    """Verify signature (JWKS or HS256), optional iss/aud, return claims."""
     decode_kw: dict[str, Any] = {
-        "algorithms": ["RS256", "ES256"],
         "options": {
             "verify_aud": bool(OAUTH2_AUDIENCE),
             "verify_iss": bool(OAUTH2_ISSUER),
@@ -96,8 +90,20 @@ def decode_access_token_jwt(bearer_token: str) -> dict[str, Any]:
     if OAUTH2_ISSUER:
         decode_kw["issuer"] = OAUTH2_ISSUER
 
+    if OAUTH2_JWT_SHARED_SECRET:
+        decode_kw["algorithms"] = ["HS256"]
+        decode_key: Any = OAUTH2_JWT_SHARED_SECRET
+    else:
+        try:
+            signing_key = _jwks().get_signing_key_from_jwt(bearer_token)
+        except Exception as e:
+            LOG.warning("JWKS / key resolve failed: %s", e)
+            raise HTTPException(status_code=401, detail="Invalid access token") from e
+        decode_kw["algorithms"] = ["RS256", "ES256"]
+        decode_key = signing_key.key
+
     try:
-        return jwt.decode(bearer_token, signing_key.key, **decode_kw)
+        return jwt.decode(bearer_token, decode_key, **decode_kw)
     except jwt.PyJWTError as e:
         LOG.warning("JWT decode failed: %s", e)
         raise HTTPException(status_code=401, detail="Invalid or expired access token") from e
@@ -138,6 +144,12 @@ def egress_scope(kind: str) -> str:
     return f"{OAUTH2_SCOPE_PREFIX}:egress:{kind}"
 
 
+def storage_scope(action: str) -> str:
+    if action not in ("read", "write"):
+        raise ValueError(f"Unsupported storage action: {action!r}")
+    return f"{OAUTH2_SCOPE_PREFIX}:storage:{action}"
+
+
 def enforce_workflow_invocation(
     granted: frozenset[str] | None,
     workflow_name: str,
@@ -166,6 +178,23 @@ def enforce_egress(
         return
     raise OAuthScopeDenied(
         f"Step {step_id!r} requires egress scope {req!r} (or {OAUTH2_SCOPE_PREFIX}:egress:*). "
+        f"Granted scopes: {sorted(granted)}",
+    )
+
+
+def enforce_storage(
+    granted: frozenset[str] | None,
+    action: str,
+    *,
+    step_id: str,
+) -> None:
+    if granted is None:
+        return
+    req = storage_scope(action)
+    if scope_allowed(granted, req):
+        return
+    raise OAuthScopeDenied(
+        f"Step {step_id!r} requires storage scope {req!r} (or {OAUTH2_SCOPE_PREFIX}:storage:*). "
         f"Granted scopes: {sorted(granted)}",
     )
 

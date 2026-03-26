@@ -1,0 +1,83 @@
+# ACC overlay — één cluster, namespace: minicloud-acc
+#
+# Apply:  kubectl apply -k deploy/k8s/overlays/acc
+# Image tags: :acc  (candidate release)
+#
+# ACL-profiel: stage (zelfde als tst, strenger dan dev)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: minicloud-acc
+
+resources:
+  - ../../
+
+images:
+  - name: minicloud/gateway
+    newTag: acc
+  - name: minicloud/orchestrator
+    newTag: acc
+  - name: minicloud/transformers
+    newTag: acc
+  - name: minicloud/storage
+    newTag: acc
+  - name: minicloud/identity
+    newTag: acc
+  - name: minicloud/egress-http
+    newTag: acc
+  - name: minicloud/egress-ftp
+    newTag: acc
+  - name: minicloud/egress-ssh
+    newTag: acc
+  - name: minicloud/dashboard
+    newTag: acc
+
+patches:
+  - target:
+      kind: Deployment
+      name: orchestrator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: orchestrator
+      spec:
+        template:
+          spec:
+            containers:
+              - name: orchestrator
+                env:
+                  - name: ORCH_RUNTIME_STORE
+                    value: http
+                  - name: ORCH_STORAGE_BEARER_TOKEN
+                    value: ""
+                  - name: ORCH_RELOAD_TOKEN
+                    value: ""
+
+  # ACC ACL: security-reader mag lezen; schrijven alleen orchestrator
+  - target:
+      kind: Deployment
+      name: storage
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: storage
+      spec:
+        template:
+          spec:
+            containers:
+              - name: storage
+                env:
+                  - name: STORAGE_ACL_READ_ROLES
+                    value: orchestrator,security-reader
+                  - name: STORAGE_ACL_WRITE_ROLES
+                    value: orchestrator
+
+  - target:
+      kind: Ingress
+      name: gateway
+    patch: |-
+      - op: add
+        path: /spec/rules/0/host
+        value: minicloud-acc.example.com

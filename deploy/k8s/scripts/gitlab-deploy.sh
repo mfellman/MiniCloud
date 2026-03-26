@@ -163,6 +163,12 @@ images:
   - name: minicloud/transformers
     newName: ${REGISTRY_PREFIX}/transformers
     newTag: ${TAG}
+  - name: minicloud/storage
+    newName: ${REGISTRY_PREFIX}/storage
+    newTag: ${TAG}
+  - name: minicloud/identity
+    newName: ${REGISTRY_PREFIX}/identity
+    newTag: ${TAG}
   - name: minicloud/orchestrator
     newName: ${REGISTRY_PREFIX}/orchestrator
     newTag: ${TAG}
@@ -213,7 +219,7 @@ fi
 kubectl apply "${APPLY_ARGS[@]}" -k "$TMP"
 
 if [[ "$PATCH_DEPLOYMENTS_PULL_SECRET" == "true" && "$DRY_RUN" != "true" ]]; then
-  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
+  for d in gateway orchestrator transformers storage identity egress-http egress-ftp egress-ssh dashboard; do
     if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
       kubectl patch deployment "$d" -n "$NAMESPACE" --type merge -p \
         "{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"${PULL_SECRET_NAME}\"}]}}}}"
@@ -224,13 +230,13 @@ fi
 # Rollout restart zodat pods altijd de nieuwste image ophalen (belangrijk bij tag=latest)
 if [[ "$DRY_RUN" != "true" && "$TAG" == "latest" ]]; then
   echo "Rollout restart van alle deployments (tag=latest)..."
-  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
+  for d in gateway orchestrator transformers storage identity egress-http egress-ftp egress-ssh dashboard; do
     if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
       kubectl rollout restart deployment/"$d" -n "$NAMESPACE"
     fi
   done
   echo "Wacht op rollout..."
-  for d in gateway orchestrator transformers egress-http egress-ftp egress-ssh dashboard; do
+  for d in gateway orchestrator transformers storage identity egress-http egress-ftp egress-ssh dashboard; do
     if kubectl get deployment "$d" -n "$NAMESPACE" >/dev/null 2>&1; then
       kubectl rollout status deployment/"$d" -n "$NAMESPACE" --timeout=120s || true
     fi
