@@ -719,7 +719,10 @@ async function submitSchedule() {
       } catch {
         data = { raw: text };
       }
-      errorEl.textContent = `Schedule failed (${resp.status}): ${data.detail || JSON.stringify(data)}`;
+      const detail = Array.isArray(data.detail)
+        ? data.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : (data.detail || JSON.stringify(data));
+      errorEl.textContent = `Schedule failed (${resp.status}): ${detail}`;
       errorEl.classList.remove("hidden");
       return;
     }
@@ -773,6 +776,7 @@ async function openSchedulesListModal() {
         <td><code style="font-size:12px;background:var(--bg-alt);padding:2px 4px;">${esc(sched.cron_expression)}</code></td>
         <td>${sched.next_run_time ? new Date(sched.next_run_time).toLocaleString() : "Never"}</td>
         <td>
+          <button class="btn-small" onclick="runScheduleNow('${esc(sched.job_id)}', event)">Run now</button>
           <button class="btn-small" onclick="deleteSchedule('${esc(sched.job_id)}', event)">Delete</button>
         </td>
       `;
@@ -793,6 +797,37 @@ function closeSchedulesListModal() {
   modal.classList.add("hidden");
 }
 
+async function runScheduleNow(jobId, event) {
+  event.stopPropagation();
+
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/schedules/${encodeURIComponent(jobId)}/run`, {
+      method: "POST",
+      headers: { "X-User": identitySession.username || "anonymous" }
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      const detail = Array.isArray(data.detail)
+        ? data.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : (data.detail || JSON.stringify(data));
+      alert(`Manual run failed (${resp.status}): ${detail}`);
+      return;
+    }
+
+    await openSchedulesListModal();
+    alert("Manual run triggered successfully.");
+  } catch (e) {
+    alert(`Manual run failed: ${e.message || e}`);
+  }
+}
+
 async function deleteSchedule(jobId, event) {
   event.stopPropagation();
   if (!confirm(`Delete this schedule?`)) return;
@@ -811,7 +846,10 @@ async function deleteSchedule(jobId, event) {
       } catch {
         data = { raw: text };
       }
-      alert(`Delete failed (${resp.status}): ${data.detail || JSON.stringify(data)}`);
+      const detail = Array.isArray(data.detail)
+        ? data.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : (data.detail || JSON.stringify(data));
+      alert(`Delete failed (${resp.status}): ${detail}`);
       return;
     }
 
@@ -1047,6 +1085,7 @@ function showDesignOverlay() {
   const overlay = document.createElement("div");
   const allowsHttp = !!(currentWorkflow.invocation && currentWorkflow.invocation.allow_http);
   const canRun = allowsHttp && canRunWorkflow(currentWorkflow.name);
+  const canManualScheduledRun = canTriggerScheduledRun();
   const localPresets = loadDesignPresets(currentWorkflow.name);
   const workflowPresets = getWorkflowExamplePresets(currentWorkflow);
   const presets = [...workflowPresets];
@@ -1069,9 +1108,12 @@ function showDesignOverlay() {
         <section class="design-trigger">
           <div class="design-trigger-header">
             <h4>Trigger from browser</h4>
-            <button class="btn btn-primary" id="designRunBtn" ${canRun ? "" : "disabled"}>Run workflow</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+              <button class="btn btn-primary" id="designRunBtn" ${canRun ? "" : "disabled"}>Run workflow</button>
+              <button class="btn" id="designRunScheduledBtn" ${canManualScheduledRun ? "" : "disabled"}>Run scheduled now</button>
+            </div>
           </div>
-          <p class="design-trigger-note">${canRun ? "Workflow allows HTTP invocation and your account has run rights." : (allowsHttp ? "Workflow allows HTTP invocation, but your account lacks run rights." : "Workflow does not allow HTTP invocation (allow_http=false).")}</p>
+          <p class="design-trigger-note">${canRun ? "Workflow allows HTTP invocation and your account has run rights." : (allowsHttp ? "Workflow allows HTTP invocation, but your account lacks run rights." : "Workflow does not allow HTTP invocation (allow_http=false). Use 'Run scheduled now' for manual scheduler trigger.")}</p>
           <div class="design-preset-row">
             <label for="designPresetSelect">Payload preset:</label>
             <select id="designPresetSelect" class="design-preset-select"></select>
@@ -1103,6 +1145,10 @@ function showDesignOverlay() {
   const runBtn = overlay.querySelector("#designRunBtn");
   if (runBtn) {
     runBtn.addEventListener("click", () => runWorkflowFromDesignOverlay(overlay));
+  }
+  const runScheduledBtn = overlay.querySelector("#designRunScheduledBtn");
+  if (runScheduledBtn) {
+    runScheduledBtn.addEventListener("click", () => runWorkflowViaSchedulerFromDesignOverlay(overlay));
   }
 
   initDesignPresetControls(overlay, presets);
@@ -1282,6 +1328,58 @@ async function runWorkflowFromDesignOverlay(overlay) {
     outputEl.textContent = `Run failed: ${e.message || e}`;
   } finally {
     runBtn.disabled = !((currentWorkflow.invocation && currentWorkflow.invocation.allow_http) && canRunWorkflow(currentWorkflow.name));
+  }
+}
+
+async function runWorkflowViaSchedulerFromDesignOverlay(overlay) {
+  const payloadEl = overlay.querySelector("#designPayload");
+  const outputEl = overlay.querySelector("#designRunOutput");
+  const runScheduledBtn = overlay.querySelector("#designRunScheduledBtn");
+
+  let parsed;
+  try {
+    parsed = JSON.parse(payloadEl.value || "{}");
+  } catch (e) {
+    outputEl.textContent = `Invalid JSON payload: ${e.message || e}`;
+    return;
+  }
+
+  if (!parsed || typeof parsed !== "object" || typeof parsed.xml !== "string" || !parsed.xml.trim()) {
+    outputEl.textContent = "Payload must be a JSON object with non-empty string field 'xml'.";
+    return;
+  }
+
+  runScheduledBtn.disabled = true;
+  outputEl.textContent = "Triggering scheduled run...";
+  try {
+    const resp = await fetch(`${SCHEDULER_API_URL}/workflows/${encodeURIComponent(currentWorkflow.name)}/run`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-User": identitySession.username || "anonymous"
+      },
+      body: JSON.stringify({ payload: parsed.xml }),
+    });
+
+    const text = await resp.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    if (!resp.ok) {
+      outputEl.textContent = `Scheduled run failed (${resp.status}):\n${JSON.stringify(data, null, 2)}`;
+      return;
+    }
+
+    outputEl.textContent = JSON.stringify(data, null, 2);
+    await loadRunsForWorkflow(currentWorkflow.name);
+  } catch (e) {
+    outputEl.textContent = `Scheduled run failed: ${e.message || e}`;
+  } finally {
+    runScheduledBtn.disabled = !canTriggerScheduledRun();
   }
 }
 
@@ -1932,6 +2030,11 @@ function hasScope(required) {
 
 function canRunWorkflow(workflowName) {
   return hasScope(`minicloud:workflow:run:${workflowName}`);
+}
+
+function canTriggerScheduledRun() {
+  const user = (identitySession.username || "").toLowerCase();
+  return user === "admin" || user === "operator";
 }
 
 async function loadIdentitySession() {
