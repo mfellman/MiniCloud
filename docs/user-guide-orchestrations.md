@@ -26,7 +26,7 @@ flowchart LR
   client --> s1 --> s2 --> sN --> out
 ```
 
-There is **no nested graph** in YAML: no `if` blocks or `for` loops as separate constructs. You can still branch with **`when`** (see §6) and repeat logic **inside** XSLT or Liquid strings.
+Workflows are still primarily a **linear list**, but you can now model nested control flow with `if`, `for_each`, and `repeat_until` substeps where needed.
 
 ---
 
@@ -105,6 +105,7 @@ If you omit **`input_from`** on **`xslt`**:
 | **`context_extract_xml`** | Read text with **XPath** from XML. |
 | **`json_set`** | Write a value **into** a JSON document at a path. |
 | **`xml_set_text`** | Set **element text** or an **attribute** on the first XPath match. |
+| **`if`** | Run a `then` / `else` branch (each branch may contain multiple substeps). |
 
 Details and all fields: **[workflows.md](workflows.md)**.
 
@@ -127,7 +128,7 @@ Use variables when:
 
 ## 6. Conditional steps (`when`) — IF / CASE
 
-There is no separate `if` step. Any step may include **`when`:**
+Any step may include **`when`:**
 
 ```yaml
 when:
@@ -140,6 +141,35 @@ when:
 If the condition is **false**, the step is **skipped** (the pipeline output stays as **`previous`**; trace shows `skipped`).
 
 Typical **CASE** pattern: several steps, each with **`when.one_of`** or different **`equals`** on the same variable, so exactly one branch runs.
+
+---
+
+## 6.1 Branching with `type: if` (then / else)
+
+Use `type: if` when one condition controls **multiple** steps.
+
+```yaml
+- id: route_person
+  type: if
+  condition:
+    context_key: person
+    equals: "Bob"
+  then:
+    - id: bob_msg
+      type: liquid
+      input_from: initial
+      template: "TRUE for {{ person }}"
+  else:
+    - id: other_msg
+      type: liquid
+      input_from: initial
+      template: "FALSE for {{ person }}"
+```
+
+- `condition` uses the same syntax as `when`.
+- `then` is required (it may be an empty list).
+- `else` is optional.
+- Nested `if` is allowed, including inside loop substeps.
 
 ---
 

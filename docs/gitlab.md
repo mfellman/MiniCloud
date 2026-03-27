@@ -74,7 +74,12 @@ git push -u origin main
    - `.../egress-ssh:<tag>`
    - `.../orchestrator:<tag>`
 
-   Tags: `latest` and the short commit SHA (`CI_COMMIT_SHORT_SHA`), see [`.gitlab-ci.yml`](../.gitlab-ci.yml).
+  Tags:
+
+  - all branch/tag pipelines: short commit SHA (`CI_COMMIT_SHORT_SHA`)
+  - default branch pipelines (typically `main`): `latest` and semantic version `0.1.<CI_PIPELINE_IID>`
+
+  The `0.1.X` tag is strictly increasing per project pipeline and is intended for deployment pinning.
 
 ---
 
@@ -83,6 +88,7 @@ git push -u origin main
 The **[`.gitlab-ci.yml`](../.gitlab-ci.yml)** file lives in the repo root. It uses **Kaniko** (no Docker-in-Docker) and builds service images in parallel.
 
 - On every **push to a branch** or **tag**, build jobs run (see `rules` in the YAML).
+- Versioned release tags are emitted only on the **default branch** as `0.1.<CI_PIPELINE_IID>`.
 - On **gitlab.com shared runners** this usually works out of the box; on **self-managed GitLab** you need runners and outbound internet (Kaniko pulls base images).
 
 First run: check **CI/CD → Pipelines**; on failure read job logs (often registry auth or network).

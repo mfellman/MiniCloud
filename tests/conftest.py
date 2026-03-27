@@ -21,6 +21,10 @@ os.environ.setdefault(
     "CONNECTIONS_DIR",
     str(REPO_ROOT / "connections"),
 )
+os.environ.setdefault(
+    "TRACES_DIR",
+    str(REPO_ROOT / ".tmp" / "traces"),
+)
 
 # Keep exactly one service root on sys.path; otherwise the wrong `app.main` wins.
 _ACTIVE_SERVICE_ROOTS: list[str] = []

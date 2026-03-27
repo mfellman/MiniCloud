@@ -1443,8 +1443,11 @@ function buildPipeline(steps, traceSteps, options = {}) {
     }
 
     const isLoop = step.type === "for_each" || step.type === "repeat_until";
+    const isIf = step.type === "if";
     if (isLoop) {
       frag.appendChild(buildLoopNode(step, stepTraces[step.id] || null, { traceRoot, scopePath }));
+    } else if (isIf) {
+      frag.appendChild(buildIfNode(step, stepTraces[step.id] || null, stepTraces, { traceRoot, scopePath }));
     } else {
       frag.appendChild(buildStepNode(step, stepTraces));
     }
@@ -1501,6 +1504,53 @@ function buildStepNode(step, stepTraces) {
   });
 
   return node;
+}
+
+function formatWhenCondition(condition) {
+  if (!condition) return "";
+  const key = condition.context_key || "context";
+  const cond = condition.equals != null ? `== "${condition.equals}"`
+    : condition.not_equals != null ? `!= "${condition.not_equals}"`
+    : Array.isArray(condition.one_of) ? `in [${condition.one_of.join(", ")}]` : "";
+  return `${key} ${cond}`.trim();
+}
+
+function buildIfNode(step, trace, stepTraces, options = {}) {
+  const block = document.createElement("div");
+  block.className = "if-split";
+
+  const condText = formatWhenCondition(step.condition);
+  const traceTag = trace
+    ? (trace.branch ? ` \u00b7 branch: ${trace.branch}` : "")
+    : "";
+  block.innerHTML = `
+    <div class="if-split-header">if ${esc(condText || "(condition)")} ${esc(traceTag)}</div>
+    <div class="if-split-lanes">
+      <div class="if-lane if-lane-true">
+        <div class="if-lane-title">then</div>
+      </div>
+      <div class="if-lane if-lane-false">
+        <div class="if-lane-title">else</div>
+      </div>
+    </div>`;
+
+  const thenLane = block.querySelector(".if-lane-true");
+  const elseLane = block.querySelector(".if-lane-false");
+
+  appendIfLaneNodes(thenLane, step.then || [], stepTraces, options);
+  appendIfLaneNodes(elseLane, step.else || [], stepTraces, options);
+
+  block.querySelector(".if-split-header").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const overlay = block.closest(".design-overlay");
+    if (overlay) {
+      selectDesignStepNode(step, trace, block, overlay);
+      return;
+    }
+    selectStepNode(step, trace, block);
+  });
+
+  return block;
 }
 
 function buildLoopNode(step, trace, options = {}) {
@@ -1597,54 +1647,21 @@ function buildLoopIterationView(loopStep, iterationTrace, options = {}) {
       conn.className = "pipe-connector";
       container.appendChild(conn);
     }
-    // Detect new IF structure
-    if (stepDef.type === "if" && (Array.isArray(stepDef.then) || Array.isArray(stepDef.else))) {
-      const group = {
-        contextKey: (stepDef.condition && stepDef.condition.context_key) || "condition",
-        trueSteps: stepDef.then || [],
-        falseSteps: stepDef.else || [],
-      };
-      const block = buildIfSplitNode(group, traceMap, { traceRoot, scopePath });
-      container.appendChild(block);
-      continue;
-    }
-    // Fallback: legacy when-based grouping (for backward compatibility)
-    if (stepDef.when) {
-      // Render as a single step node for now (could be extended for legacy split)
+    const isLoop = stepDef.type === "for_each" || stepDef.type === "repeat_until";
+    const isIf = stepDef.type === "if";
+    if (isLoop) {
+      container.appendChild(buildLoopNode(stepDef, traceMap[stepDef.id] || null, { traceRoot, scopePath }));
+    } else if (isIf) {
+      container.appendChild(buildIfNode(stepDef, traceMap[stepDef.id] || null, traceMap, { traceRoot, scopePath }));
+    } else {
       container.appendChild(buildStepNode(stepDef, traceMap));
-      continue;
     }
-    // Normal step
-    container.appendChild(buildStepNode(stepDef, traceMap));
   }
 
   return container;
 }
 
-function buildIfSplitNode(group, traceMap, options = {}) {
-  const traceRoot = options.traceRoot || null;
-  const block = document.createElement("div");
-  block.className = "if-split";
-
-  block.innerHTML = `
-    <div class="if-split-header">if (${esc(group.contextKey)})</div>
-    <div class="if-split-lanes">
-      <div class="if-lane if-lane-true">
-        <div class="if-lane-title">true</div>
-      </div>
-      <div class="if-lane if-lane-false">
-        <div class="if-lane-title">false</div>
-      </div>
-    </div>`;
-
-  const trueLane = block.querySelector(".if-lane-true");
-  const falseLane = block.querySelector(".if-lane-false");
-  appendIfLaneNodes(trueLane, group.trueSteps, traceMap, traceRoot);
-  appendIfLaneNodes(falseLane, group.falseSteps, traceMap, traceRoot);
-  return block;
-}
-
-function appendIfLaneNodes(laneEl, steps, traceMap, traceRoot) {
+function appendIfLaneNodes(laneEl, steps, traceMap, options = {}) {
   if (!steps || !steps.length) {
     const empty = document.createElement("div");
     empty.className = "if-lane-empty";
@@ -1659,7 +1676,15 @@ function appendIfLaneNodes(laneEl, steps, traceMap, traceRoot) {
       conn.className = "pipe-connector if-lane-connector";
       laneEl.appendChild(conn);
     }
-    laneEl.appendChild(buildStepNode(stepDef, traceMap));
+    const isLoop = stepDef.type === "for_each" || stepDef.type === "repeat_until";
+    const isIf = stepDef.type === "if";
+    if (isLoop) {
+      laneEl.appendChild(buildLoopNode(stepDef, traceMap[stepDef.id] || null, options));
+    } else if (isIf) {
+      laneEl.appendChild(buildIfNode(stepDef, traceMap[stepDef.id] || null, traceMap, options));
+    } else {
+      laneEl.appendChild(buildStepNode(stepDef, traceMap));
+    }
   });
 }
 

@@ -9,6 +9,8 @@ stages:
 variables:
   # Executor-image (Kaniko); pin voor voorspelbare builds
   KANIKO_IMAGE: gcr.io/kaniko-project/executor:v1.23.2-debug
+  VERSION_MAJOR: "0"
+  VERSION_MINOR: "1"
 
 # Template: één microservice uit services/<naam>/
 .build-kaniko:
@@ -28,11 +30,14 @@ variables:
       DF="${CTX}/Dockerfile"
       test -f "$DF"
       IMG="${IMAGE_NAME:-${SERVICE//\//-}}"
-      /kaniko/executor \
-        --context "$CTX" \
-        --dockerfile "$DF" \
-        --destination "${CI_REGISTRY_IMAGE}/${IMG}:${CI_COMMIT_SHORT_SHA}" \
-        --destination "${CI_REGISTRY_IMAGE}/${IMG}:latest"
+      VERSION_TAG="${VERSION_MAJOR}.${VERSION_MINOR}.${CI_PIPELINE_IID}"
+      DEST_ARGS="--destination ${CI_REGISTRY_IMAGE}/${IMG}:${CI_COMMIT_SHORT_SHA}"
+      if [ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" ]; then
+        DEST_ARGS="${DEST_ARGS} --destination ${CI_REGISTRY_IMAGE}/${IMG}:latest --destination ${CI_REGISTRY_IMAGE}/${IMG}:${VERSION_TAG}"
+      fi
+      # POSIX-sh compatible argument passing (no bash arrays).
+      # shellcheck disable=SC2086
+      /kaniko/executor --context "$CTX" --dockerfile "$DF" $DEST_ARGS
   rules:
     - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG
