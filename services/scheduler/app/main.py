@@ -63,6 +63,11 @@ class ScheduleResponse(BaseModel):
     next_run_time: str | None = None
 
 
+class ManualWorkflowRunRequest(BaseModel):
+    """Manual run request for a workflow via scheduler path."""
+    payload: str = Field(default='<root/>', description="XML payload to send on trigger")
+
+
 # ============================================================================
 # Auth helpers
 # ============================================================================
@@ -239,6 +244,21 @@ async def run_schedule_now(
         "status": "triggered",
         "job_id": job_id,
         "workflow_name": sched["workflow"],
+    }
+
+
+@app.post("/workflows/{workflow_name}/run")
+async def run_workflow_now(
+    workflow_name: str,
+    body: ManualWorkflowRunRequest,
+    user: str = Depends(_verify_scheduler_permission),
+) -> dict:
+    """Trigger a workflow immediately via scheduler semantics (manual run)."""
+    await _trigger_workflow(workflow_name, body.payload)
+    LOG.info("workflow manually triggered: workflow=%s user=%s", workflow_name, user)
+    return {
+        "status": "triggered",
+        "workflow_name": workflow_name,
     }
 
 

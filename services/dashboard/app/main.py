@@ -523,6 +523,12 @@ async def scheduler_run_schedule(job_id: str, request: Request) -> Any:
     return await _scheduler_proxy("POST", f"/schedules/{job_id}/run", user=me.get("username", "anonymous"))
 
 
+@app.post("/api/scheduler/workflows/{workflow_name}/run")
+async def scheduler_run_workflow(workflow_name: str, body: dict, request: Request) -> Any:
+    me = await _require_identity_user(request)
+    return await _scheduler_proxy("POST", f"/workflows/{workflow_name}/run", body=body, user=me.get("username", "anonymous"))
+
+
 @app.get("/api/iam/permissions")
 async def iam_permissions(request: Request) -> Any:
     me = await _require_admin(request)
