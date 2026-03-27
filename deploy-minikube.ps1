@@ -301,6 +301,47 @@ if ($SkipPortForward) {
 }
 
 # ---------------------------------------------------------------------------
+# Stap 9.5: Bestaande workflows en connections via de REST API naar Storage pushen
+# ---------------------------------------------------------------------------
+if (-not $SkipPortForward) {
+    Write-Step "Workflows & Connections in Storage laden"
+    $storageUrl = "http://localhost:8086"
+    $orchUrl    = "http://localhost:8083"
+
+    if (Test-Path "workflows\*") {
+        Get-ChildItem -Path "workflows" -Filter *.yaml | ForEach-Object {
+            $name = $_.BaseName
+            Write-Host "    Upload workflow: $name"
+            try {
+                Invoke-RestMethod -Uri "$storageUrl/internal/upload/workflows/$name" -Method Post -ContentType "application/yaml" -InFile $_.FullName -ErrorAction Stop | Out-Null
+            } catch {
+                Write-Warn "      Fout bij uploaden van $name : $($_.Exception.Message)"
+            }
+        }
+    }
+
+    if (Test-Path "connections\*") {
+        Get-ChildItem -Path "connections" -Filter *.yaml | ForEach-Object {
+            $name = $_.BaseName
+            Write-Host "    Upload connection: $name"
+            try {
+                Invoke-RestMethod -Uri "$storageUrl/internal/upload/connections/$name" -Method Post -ContentType "application/yaml" -InFile $_.FullName -ErrorAction Stop | Out-Null
+            } catch {
+                Write-Warn "      Fout bij uploaden van $name : $($_.Exception.Message)"
+            }
+        }
+    }
+
+    Write-Host "    Orchestrator reload triggeren..."
+    try {
+        Invoke-RestMethod -Uri "$orchUrl/admin/reload" -Method Post -ErrorAction Stop | Out-Null
+        Write-Ok "Workflows & connections succesvol ingeladen!"
+    } catch {
+        Write-Warn "      Fout bij reloaden: $($_.Exception.Message)"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Stap 10: (optioneel) Tests uitvoeren
 # ---------------------------------------------------------------------------
 if ($RunTests) {

@@ -15,11 +15,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # On conftest import (before first orchestrator app.main import).
 os.environ.setdefault(
     "WORKFLOWS_DIR",
-    str(REPO_ROOT / "services" / "orchestrator" / "workflows"),
+    str(REPO_ROOT / "workflows"),
 )
 os.environ.setdefault(
     "CONNECTIONS_DIR",
-    str(REPO_ROOT / "services" / "orchestrator" / "connections"),
+    str(REPO_ROOT / "connections"),
 )
 
 # Keep exactly one service root on sys.path; otherwise the wrong `app.main` wins.
@@ -99,7 +99,7 @@ def dashboard_app() -> Iterator[FastAPI]:
 
 @pytest.fixture
 def orchestrator_workflows_dir() -> Path:
-    return REPO_ROOT / "services" / "orchestrator" / "workflows"
+    return REPO_ROOT / "workflows"
 
 
 def load_workflow_runner_standalone():

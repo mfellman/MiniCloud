@@ -40,9 +40,10 @@ def test_load_connections_example():
     load_fastapi_app("orchestrator")
     from app.connections import load_connections
 
-    d = REPO_ROOT / "services" / "orchestrator" / "connections"
+    d = REPO_ROOT / "connections"
     reg = load_connections(d)
     assert "httpbin_example" in reg
     assert getattr(reg["httpbin_example"], "base_url") == "https://httpbin.org"
     assert "rabbitmq_events" in reg
     assert getattr(reg["rabbitmq_events"], "exchange") == "minicloud.events"
+

@@ -13,7 +13,7 @@ from typing import Any
 import jwt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="MiniCloud Identity", version="0.1.0")
@@ -455,6 +455,12 @@ def login(body: LoginBody) -> TokenResponse:
             groups=groups,
             scopes=scopes,
         )
+
+
+@app.post("/token", response_model=TokenResponse)
+def token_endpoint(form_data: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
+    """Standard OAuth2 token endpoint."""
+    return login(LoginBody(username=form_data.username, password=form_data.password))
 
 
 @app.get("/auth/me")

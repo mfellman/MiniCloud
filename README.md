@@ -798,3 +798,5 @@ curl -s -X POST http://127.0.0.1:8083/invoke/scheduled \
 ## License and contributions
 
 See [`LICENSE`](LICENSE): permissive use with **notice** for production use or redistribution, an **expectation to share improvements** back, and a standard **no-warranty / no-liability** disclaimer. Replace the copyright holder and contact placeholders in `LICENSE` with your details.
+
+- [Omgevingen & Lokaal Testen in Minikube (DTAP)](docs/environments.md)

@@ -20,29 +20,22 @@ example_payloads:
           <item>Eve</item>
         </items>
 
-# Demonstratie van for_each en repeat_until.
-# Input (POST /v1/run/loop_demo):
-#   {"xml": "<items><item>Alice</item><item>Bob</item><item>Charlie</item></items>"}
-#
-# Flow:
-#   1. XML → JSON (xml2json)
-#   2. for_each over items → Liquid greeting per item
-#   3. Liquid join van de resultaten
-
 steps:
-  # 1. XML naar JSON
   - id: to_json
     type: xml2json
     input_from: initial
 
-  # 2. Haal de items op als array
   - id: extract_items
     type: context_extract_json
     variable: items_json
     input_from: to_json
     json_path: /items/item
 
-  # 3. Itereer over elk item en maak een groet
+  - id: init_empty
+    type: context_set
+    variable: empty_obj
+    value: "{}"
+
   - id: greet_all
     type: for_each
     input_from: "var:items_json"
@@ -52,7 +45,7 @@ steps:
     steps:
       - id: make_ctx
         type: json_set
-        input_from: initial
+        input_from: "var:empty_obj"
         json_path: /name
         value_from: "var:person"
       - id: greet
@@ -60,8 +53,13 @@ steps:
         input_from: make_ctx
         template: "Hello, {{ name }}!"
 
-  # 4. Combineer de resultaten
+  - id: set_greetings
+    type: json_set
+    input_from: "var:empty_obj"
+    json_path: /greetings
+    value_from: greet_all
+
   - id: combine
     type: liquid
-    input_from: greet_all
+    input_from: set_greetings
     template: "Greetings: {% for g in greetings %}{{ g }}{% unless forloop.last %}, {% endunless %}{% endfor %}"
