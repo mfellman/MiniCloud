@@ -712,6 +712,41 @@ body {
 
 .tab-content { padding: 16px; }
 
+.detail-split-stack {
+  display: grid;
+  gap: 10px;
+  height: calc(100vh - 320px);
+  min-height: 320px;
+}
+
+.detail-data-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.detail-data-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.icon-btn {
+  padding: 2px 8px;
+  min-height: auto;
+  font-size: 12px;
+}
+
+.detail-data-block .code-block {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+}
+
 .code-block {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -791,6 +826,27 @@ body {
   color: var(--text-muted);
   font-size: 12px;
   margin-bottom: 8px;
+}
+
+.design-step-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.design-step-tab {
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.design-step-tab.active {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .design-step-detail .code-block {

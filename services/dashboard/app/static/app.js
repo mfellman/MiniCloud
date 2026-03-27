@@ -139,6 +139,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderStorageKeysPage();
   });
   document.getElementById("detailClose").addEventListener("click", closeDetail);
+  document.getElementById("copyDetailInput").addEventListener("click", () => copyTextFromElement("detailInput"));
+  document.getElementById("copyDetailOutput").addEventListener("click", () => copyTextFromElement("detailOutput"));
 
   // Rerun modal handlers
   document.getElementById("rerunModalClose").addEventListener("click", closeRerunModal);
@@ -1132,6 +1134,11 @@ function showDesignOverlay() {
             <div class="design-step-detail-title" id="designStepDetailTitle">Step details</div>
             <div class="design-step-detail-subtitle">Click a step in the design to inspect configuration.</div>
             <pre id="designStepDetail" class="code-block">No step selected.</pre>
+            <div class="design-step-tabs" id="designStepTabs">
+              <button class="design-step-tab active" data-design-tab="info">Info</button>
+              <button class="design-step-tab" data-design-tab="code">Code</button>
+            </div>
+            <pre id="designStepCode" class="code-block hidden">No step selected.</pre>
           </aside>
         </section>
       </div>
@@ -1151,11 +1158,36 @@ function showDesignOverlay() {
     runScheduledBtn.addEventListener("click", () => runWorkflowViaSchedulerFromDesignOverlay(overlay));
   }
 
+  initDesignStepTabs(overlay);
+
   initDesignPresetControls(overlay, presets);
 
   overlay.querySelector("#designClose").addEventListener("click", () => overlay.remove());
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) overlay.remove();
+  });
+}
+
+function initDesignStepTabs(overlay) {
+  const tabs = overlay.querySelectorAll("#designStepTabs .design-step-tab");
+  const infoEl = overlay.querySelector("#designStepDetail");
+  const codeEl = overlay.querySelector("#designStepCode");
+  if (!tabs.length || !infoEl || !codeEl) return;
+
+  tabs.forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      const target = tabBtn.getAttribute("data-design-tab") || "info";
+      tabs.forEach((b) => b.classList.remove("active"));
+      tabBtn.classList.add("active");
+
+      if (target === "code") {
+        infoEl.classList.add("hidden");
+        codeEl.classList.remove("hidden");
+      } else {
+        codeEl.classList.add("hidden");
+        infoEl.classList.remove("hidden");
+      }
+    });
   });
 }
 
@@ -1509,7 +1541,8 @@ function selectDesignStepNode(step, trace, nodeEl, overlay) {
 
   const titleEl = overlay.querySelector("#designStepDetailTitle");
   const detailEl = overlay.querySelector("#designStepDetail");
-  if (!titleEl || !detailEl) {
+  const codeEl = overlay.querySelector("#designStepCode");
+  if (!titleEl || !detailEl || !codeEl) {
     return;
   }
 
@@ -1524,6 +1557,86 @@ function selectDesignStepNode(step, trace, nodeEl, overlay) {
     detail.trace = trace;
   }
   detailEl.textContent = JSON.stringify(detail, null, 2);
+  codeEl.textContent = buildDesignStepCodeFragment(step);
+}
+
+function buildDesignStepCodeFragment(step) {
+  const stepYaml = objectToYaml(step, 2);
+  const connections = collectConnectionRefs(step);
+
+  let result = "steps:\n";
+  result += "  - " + stepYaml.trimStart();
+
+  if (connections.length) {
+    result += "\n\n# Connections referenced by this step\n";
+    result += "connections:\n";
+    for (const name of connections) {
+      result += `  ${name}:\n`;
+      result += "    # Add this connection in connections/*.yaml\n";
+      result += "    type: http\n";
+      result += "    base_url: https://example.invalid\n";
+    }
+  }
+
+  return result;
+}
+
+function collectConnectionRefs(value, refs = new Set()) {
+  if (Array.isArray(value)) {
+    value.forEach((v) => collectConnectionRefs(v, refs));
+    return refs;
+  }
+  if (!value || typeof value !== "object") {
+    return refs;
+  }
+
+  Object.entries(value).forEach(([k, v]) => {
+    if ((k === "connection" || k.endsWith("_connection")) && typeof v === "string" && v.trim()) {
+      refs.add(v.trim());
+    }
+    collectConnectionRefs(v, refs);
+  });
+  return refs;
+}
+
+function objectToYaml(value, indent = 0) {
+  const pad = " ".repeat(indent);
+  if (value === null || value === undefined) return "null\n";
+
+  if (typeof value === "string") {
+    if (value.includes("\n")) {
+      const lines = value.split("\n").map((line) => `${pad}  ${line}`);
+      return `|\n${lines.join("\n")}\n`;
+    }
+    return `${JSON.stringify(value)}\n`;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return `${String(value)}\n`;
+  }
+
+  if (Array.isArray(value)) {
+    if (!value.length) return "[]\n";
+    return value.map((item) => {
+      if (item && typeof item === "object") {
+        const nested = objectToYaml(item, indent + 2).trimEnd();
+        const lines = nested.split("\n");
+        const first = lines.shift() || "";
+        const rest = lines.map((l) => `${pad}  ${l}`).join("\n");
+        return `${pad}- ${first}${rest ? `\n${rest}` : ""}`;
+      }
+      return `${pad}- ${objectToYaml(item, 0).trim()}`;
+    }).join("\n") + "\n";
+  }
+
+  const entries = Object.entries(value);
+  if (!entries.length) return "{}\n";
+  return entries.map(([k, v]) => {
+    if (v && typeof v === "object") {
+      return `${pad}${k}:\n${objectToYaml(v, indent + 2)}`.trimEnd();
+    }
+    return `${pad}${k}: ${objectToYaml(v, 0).trimEnd()}`;
+  }).join("\n") + "\n";
 }
 
 function selectStepNode(step, trace, nodeEl) {
@@ -1536,6 +1649,7 @@ function selectStepNode(step, trace, nodeEl) {
   const metaObj = { ...step };
   if (trace) metaObj._trace = trace;
   document.getElementById("detailMeta").textContent = JSON.stringify(metaObj, null, 2);
+  document.getElementById("detailCode").textContent = buildDesignStepCodeFragment(step);
 
   if (currentTrace && trace) {
     loadStepIO(currentTrace.request_id, step.id, trace);
@@ -1544,7 +1658,7 @@ function selectStepNode(step, trace, nodeEl) {
     document.getElementById("detailOutput").textContent = trace?.output_preview || "(no data)";
   }
 
-  switchTab("input");
+  switchTab("data");
 }
 
 async function loadStepIO(requestId, stepId, trace) {
@@ -1575,9 +1689,25 @@ function closeDetail() {
 
 function switchTab(tab) {
   document.querySelectorAll(".detail-tabs .tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-  document.getElementById("tabInput").classList.toggle("hidden", tab !== "input");
-  document.getElementById("tabOutput").classList.toggle("hidden", tab !== "output");
+  document.getElementById("tabData").classList.toggle("hidden", tab !== "data");
+  document.getElementById("tabCode").classList.toggle("hidden", tab !== "code");
   document.getElementById("tabMeta").classList.toggle("hidden", tab !== "meta");
+}
+
+async function copyTextFromElement(elementId) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const text = el.textContent || "";
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_e) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
 }
 
 // ---------------------------------------------------------------------------
