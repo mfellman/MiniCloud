@@ -1,6 +1,6 @@
-# Minikube overlay — lokale ontwikkeling op Windows met minikube.
+# Minikube overlay — local development with minikube.
 #
-# Gebruik via deploy-minikube.ps1 (in de repo root).
+# Use via deploy-minikube.sh or deploy-minikube.ps1 (repo root).
 # Handmatig (vanuit repo root):
 #   kubectl apply -k deploy/overlays/minikube
 #

@@ -53,7 +53,9 @@ For a real registry: tag versions, set `imagePullPolicy` as needed, and replace 
 
 ---
 
-## 4. Script: `local-kind.sh`
+## 4. Local deploy scripts
+
+### 4.1 kind: `local-kind.sh`
 
 Path: [`deploy/k8s/local-kind.sh`](../deploy/k8s/local-kind.sh).
 
@@ -68,6 +70,27 @@ Example:
 ```bash
 kind create cluster --name minicloud
 ./deploy/k8s/local-kind.sh
+```
+
+### 4.2 minikube: `deploy-minikube.sh` / `deploy-minikube.ps1`
+
+Paths:
+- [`deploy-minikube.sh`](../deploy-minikube.sh) (Linux/macOS shell)
+- [`deploy-minikube.ps1`](../deploy-minikube.ps1) (PowerShell)
+
+Both scripts automate local minikube bring-up:
+1. Validate prerequisites (`minikube`, `kubectl`, `docker`).
+2. Start/reuse the `minicloud` profile.
+3. Build local Docker images in the minikube daemon.
+4. Apply `deploy/overlays/minikube`.
+5. Wait for deployments and optionally set port-forwards/tests.
+
+Linux/macOS examples:
+
+```bash
+./deploy-minikube.sh
+./deploy-minikube.sh --skip-build
+./deploy-minikube.sh --run-tests
 ```
 
 Then for example:
