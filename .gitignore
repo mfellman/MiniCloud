@@ -36,3 +36,7 @@ test_output.txt
 
 # Runtime artifacts
 .tmp/
+
+# Local build/sandbox artifacts
+=0.0.9
+cursor-sandbox-apparmor.deb
