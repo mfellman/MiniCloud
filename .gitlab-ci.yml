@@ -9,6 +9,8 @@ stages:
 variables:
   # Executor-image (Kaniko); pin voor voorspelbare builds
   KANIKO_IMAGE: gcr.io/kaniko-project/executor:v1.23.2-debug
+  VERSION_MAJOR: "0"
+  VERSION_MINOR: "1"
 
 # Template: één microservice uit services/<naam>/
 .build-kaniko:
@@ -28,11 +30,20 @@ variables:
       DF="${CTX}/Dockerfile"
       test -f "$DF"
       IMG="${IMAGE_NAME:-${SERVICE//\//-}}"
+      VERSION_TAG="${VERSION_MAJOR}.${VERSION_MINOR}.${CI_PIPELINE_IID}"
+      DESTINATIONS=(
+        "--destination" "${CI_REGISTRY_IMAGE}/${IMG}:${CI_COMMIT_SHORT_SHA}"
+      )
+      if [ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH}" ]; then
+        DESTINATIONS+=(
+          "--destination" "${CI_REGISTRY_IMAGE}/${IMG}:latest"
+          "--destination" "${CI_REGISTRY_IMAGE}/${IMG}:${VERSION_TAG}"
+        )
+      fi
       /kaniko/executor \
         --context "$CTX" \
         --dockerfile "$DF" \
-        --destination "${CI_REGISTRY_IMAGE}/${IMG}:${CI_COMMIT_SHORT_SHA}" \
-        --destination "${CI_REGISTRY_IMAGE}/${IMG}:latest"
+        "${DESTINATIONS[@]}"
   rules:
     - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG

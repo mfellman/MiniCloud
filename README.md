@@ -517,6 +517,7 @@ Workflows are bind-mounted from `workflows` (read-only). YAML changes are visibl
 
 - Manifests live under **`deploy/k8s/`** (Kustomize).
 - **GitLab Container Registry**: full-cluster deploy (images, pull secrets, overlay) is documented in **[docs/deployment-kubernetes-gitlab.md](docs/deployment-kubernetes-gitlab.md)** (`deploy/k8s/overlays/gitlab/`).
+- GitLab CI image tags: branch/tag builds publish `:<short-sha>`; default-branch builds also publish `:latest` and versioned tags as `:0.1.<CI_PIPELINE_IID>`.
 - Build and load images into **kind** with **`deploy/k8s/local-kind.sh`** (requires Docker, kind, kubectl).
 - Workflows have one source in this repo: `workflows/*.yaml`.
 - For Kubernetes/minikube runtime (`ORCH_RUNTIME_STORE=http`), upload workflows + connections with `./push-runtime-assets.ps1` (or `deploy-minikube.ps1`) and trigger reload.
