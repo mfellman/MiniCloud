@@ -424,6 +424,24 @@ class RepeatUntilWorkflowStep(WhenMixin):
     steps: list[Any] = Field(..., min_length=1)
 
 
+class IfWorkflowStep(WhenMixin):
+    """Branching step: run then/else substeps based on a condition."""
+
+    type: Literal["if"] = "if"
+    id: str
+    condition: WhenCondition
+    then_steps: list[Any] = Field(
+        ...,
+        validation_alias=AliasChoices("then_steps", "then"),
+        serialization_alias="then",
+    )
+    else_steps: list[Any] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("else_steps", "else"),
+        serialization_alias="else",
+    )
+
+
 class ContextSetWorkflowStep(WhenMixin):
     type: Literal["context_set"] = "context_set"
     id: str
@@ -544,6 +562,7 @@ WorkflowStep = Annotated[
         XmlSetTextWorkflowStep,
         ForEachWorkflowStep,
         RepeatUntilWorkflowStep,
+        IfWorkflowStep,
     ],
     Field(discriminator="type"),
 ]
@@ -766,6 +785,28 @@ async def run_workflow(
             return await _exec_for_each(step, initial, prev, idx, collector)
         elif isinstance(step, RepeatUntilWorkflowStep):
             return await _exec_repeat_until(step, initial, prev, idx, collector)
+        elif isinstance(step, IfWorkflowStep):
+            st = collector.step(step.id, "if") if collector else None
+            then_steps = _validate_loop_substeps(step.then_steps)
+            else_steps = _validate_loop_substeps(step.else_steps)
+            matched = _when_matches(step.condition, context)
+            branch = "then" if matched else "else"
+            branch_steps = then_steps if matched else else_steps
+            out_prev = await _exec_substeps(branch_steps, initial, prev, collector)
+            outputs[step.id] = out_prev
+            if st:
+                st.record_output(out_prev)
+                collector.add_step(st.finish(ok=True, extra={"condition_matched": matched, "branch": branch}))
+            trace.append(
+                {
+                    "step": step.id,
+                    "type": "if",
+                    "ok": True,
+                    "condition_matched": matched,
+                    "branch": branch,
+                },
+            )
+            return out_prev
         elif isinstance(step, ContextSetWorkflowStep):
             st = collector.step(step.id, "context_set") if collector else None
             if step.value is not None:

@@ -351,9 +351,9 @@ Write into the **first** XPath match: either element **text** or an **attribute*
 
 ---
 
-## 10.4 Conditional steps: `when` (IF / CASE-style)
+## 10.4 Conditional steps with `when`
 
-**There are no separate `if` / `case` step types.** Any step may include an optional **`when`** block. If present, the orchestrator evaluates it against **`context`** before running the step. If the condition is **false**, the step is **skipped**: `outputs[id] = previous` (unchanged pipeline), and trace records `skipped: true`, `reason: when`.
+Any step may include an optional **`when`** block. If present, the orchestrator evaluates it against **`context`** before running the step. If the condition is **false**, the step is **skipped**: `outputs[id] = previous` (unchanged pipeline), and trace records `skipped: true`, `reason: when`.
 
 ```yaml
 - id: <string>
@@ -369,6 +369,42 @@ Write into the **first** XPath match: either element **text** or an **attribute*
 - **`equals`** — IF context value equals this string (typical **IF**).
 - **`not_equals`** — run if different.
 - **`one_of`** — run if context value is in the list (**CASE** arm: use one step per branch with mutually exclusive conditions).
+
+---
+
+## 10.5 Branch step: `type: if`
+
+Use an explicit `if` step when you want multiple substeps in a `then` / `else` branch.
+
+```yaml
+- id: choose_route
+  type: if
+  condition:
+    context_key: person
+    equals: "Bob"
+  then:
+    - id: true_step
+      type: liquid
+      input_from: initial
+      template: "TRUE for {{ person }}"
+  else:
+    - id: false_step
+      type: liquid
+      input_from: initial
+      template: "FALSE for {{ person }}"
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `condition` | yes | Same condition syntax as `when` (`context_key` + exactly one of `equals` / `not_equals` / `one_of`). |
+| `then` | yes | List of substeps executed when condition matches. May be empty (`then: []`). |
+| `else` | no | List of substeps executed when condition does not match. Defaults to empty list. |
+
+Notes:
+
+- `type: if` can be nested (including inside `for_each` / `repeat_until` substeps).
+- Substeps inside `then` / `else` support all regular step types (including loops and nested `if`).
+- The `if` step itself records one trace entry with `branch: "then"` or `branch: "else"`.
 
 ---
 
@@ -483,7 +519,7 @@ Repeats substeps until a context condition is met (polling, pagination, converge
 
 ### Nesting
 
-Both `for_each` and `repeat_until` substeps can contain any step type, including nested loops. The `when` condition works on substeps too.
+Both `for_each` and `repeat_until` substeps can contain any step type, including nested loops and `if` blocks. The `when` condition works on substeps too.
 
 ### Example
 

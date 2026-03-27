@@ -1,5 +1,5 @@
 name: if_demo
- group: Demo
+group: Demo
  invocation:
    allow_http: true
    allow_schedule: false

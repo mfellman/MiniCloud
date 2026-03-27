@@ -350,3 +350,135 @@ steps:
     assert final == "secret"
     assert trace[0]["type"] == "storage_write"
     assert trace[1]["type"] == "storage_read"
+
+
+@pytest.mark.asyncio
+async def test_if_else_basic_branching():
+    wr = load_workflow_runner_standalone()
+    raw = yaml.safe_load(
+        """
+name: if_basic
+steps:
+  - id: set_person
+    type: context_set
+    variable: person
+    value: "Bob"
+  - id: choose
+    type: if
+    condition:
+      context_key: person
+      equals: "Bob"
+    then:
+      - id: true_step
+        type: liquid
+        input_from: initial
+        template: "TRUE branch"
+    else:
+      - id: false_step
+        type: liquid
+        input_from: initial
+        template: "FALSE branch"
+""",
+    )
+    doc = wr.WorkflowDoc.model_validate(raw)
+
+    tf_app = load_fastapi_app("transformers")
+    transport = httpx.ASGITransport(app=tf_app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://transformers.test",
+    ) as client:
+        final, _out, trace, _ctx = await wr.run_workflow(
+            doc,
+            '{"x": 1}',
+            transformers_base_url="http://transformers.test",
+            egress_http_url="http://unused/call",
+            egress_ftp_url="http://unused/ftp",
+            egress_ssh_url="http://unused/exec",
+            egress_sftp_url="http://unused/sftp",
+            request_id="test-if-basic",
+            httpx_client=client,
+        )
+
+    assert final.strip() == "TRUE branch"
+    choose_trace = [t for t in trace if t["step"] == "choose"]
+    assert choose_trace[0]["type"] == "if"
+    assert choose_trace[0]["branch"] == "then"
+    assert choose_trace[0]["condition_matched"] is True
+
+
+@pytest.mark.asyncio
+async def test_if_nested_and_optional_else():
+    wr = load_workflow_runner_standalone()
+    raw = yaml.safe_load(
+        """
+name: if_nested
+steps:
+  - id: set_person
+    type: context_set
+    variable: person
+    value: "Bob"
+  - id: set_age
+    type: context_set
+    variable: age
+    value: "41"
+  - id: outer_if
+    type: if
+    condition:
+      context_key: person
+      equals: "Bob"
+    then:
+      - id: inner_if
+        type: if
+        condition:
+          context_key: age
+          equals: "42"
+        then:
+          - id: hit_42
+            type: liquid
+            input_from: initial
+            template: "Bob is 42!"
+        else:
+          - id: miss_42
+            type: liquid
+            input_from: initial
+            template: "Bob is niet 42."
+  - id: only_then
+    type: if
+    condition:
+      context_key: person
+      equals: "Alice"
+    then:
+      - id: should_not_run
+        type: liquid
+        input_from: initial
+        template: "nope"
+""",
+    )
+    doc = wr.WorkflowDoc.model_validate(raw)
+
+    tf_app = load_fastapi_app("transformers")
+    transport = httpx.ASGITransport(app=tf_app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://transformers.test",
+    ) as client:
+        final, _out, trace, _ctx = await wr.run_workflow(
+            doc,
+            '{"x": 1}',
+            transformers_base_url="http://transformers.test",
+            egress_http_url="http://unused/call",
+            egress_ftp_url="http://unused/ftp",
+            egress_ssh_url="http://unused/exec",
+            egress_sftp_url="http://unused/sftp",
+            request_id="test-if-nested",
+            httpx_client=client,
+        )
+
+    assert final.strip() == "Bob is niet 42."
+    outer = [t for t in trace if t["step"] == "outer_if"][0]
+    inner = [t for t in trace if t["step"] == "inner_if"][0]
+    only_then = [t for t in trace if t["step"] == "only_then"][0]
+    assert outer["branch"] == "then"
+    assert inner["branch"] == "else"
+    assert only_then["branch"] == "else"
