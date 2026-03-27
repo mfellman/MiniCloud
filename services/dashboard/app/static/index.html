@@ -354,15 +354,30 @@
       </div>
       <div class="detail-body">
         <div class="detail-tabs">
-          <button class="tab active" data-tab="input">Input</button>
-          <button class="tab" data-tab="output">Output</button>
+          <button class="tab active" data-tab="data">Data</button>
+          <button class="tab" data-tab="code">Code</button>
           <button class="tab" data-tab="meta">Info</button>
         </div>
-        <div class="tab-content" id="tabInput">
-          <pre id="detailInput" class="code-block"></pre>
+        <div class="tab-content" id="tabData">
+          <div class="detail-split-stack">
+            <section class="detail-data-block">
+              <div class="detail-data-header">
+                <span>Input</span>
+                <button class="btn icon-btn" id="copyDetailInput" title="Copy input" aria-label="Copy input">Copy</button>
+              </div>
+              <pre id="detailInput" class="code-block"></pre>
+            </section>
+            <section class="detail-data-block">
+              <div class="detail-data-header">
+                <span>Output</span>
+                <button class="btn icon-btn" id="copyDetailOutput" title="Copy output" aria-label="Copy output">Copy</button>
+              </div>
+              <pre id="detailOutput" class="code-block"></pre>
+            </section>
+          </div>
         </div>
-        <div class="tab-content hidden" id="tabOutput">
-          <pre id="detailOutput" class="code-block"></pre>
+        <div class="tab-content hidden" id="tabCode">
+          <pre id="detailCode" class="code-block"></pre>
         </div>
         <div class="tab-content hidden" id="tabMeta">
           <pre id="detailMeta" class="code-block"></pre>

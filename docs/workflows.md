@@ -487,7 +487,7 @@ Both `for_each` and `repeat_until` substeps can contain any step type, including
 
 ### Example
 
-See `services/orchestrator/workflows/loop_demo.yaml` for a complete for_each demo with xml2json + Liquid.
+See `workflows/loop_demo.yaml` for a complete for_each demo with xml2json + Liquid.
 
 ---
 
@@ -503,10 +503,10 @@ See `services/orchestrator/workflows/loop_demo.yaml` for a complete for_each dem
 
 | File | Purpose |
 |------|---------|
-| `services/orchestrator/workflows/minimal.yaml` | Single XSLT step; offline test via `POST /v1/run/minimal`. |
-| `services/orchestrator/workflows/demo.yaml` | XSLT + HTTP to external endpoint (needs network). |
-| `services/orchestrator/workflows/transform_demo.yaml` | xml2json + Liquid (`Hello, {{ greeting.name }}`). |
-| `services/orchestrator/workflows/schedule_only_demo.yaml` | `allow_schedule` only; test `POST /invoke/scheduled`. |
+| `workflows/minimal.yaml` | Single XSLT step; offline test via `POST /v1/run/minimal`. |
+| `workflows/demo.yaml` | XSLT + HTTP to external endpoint (needs network). |
+| `workflows/transform_demo.yaml` | xml2json + Liquid (`Hello, {{ greeting.name }}`). |
+| `workflows/schedule_only_demo.yaml` | `allow_schedule` only; test `POST /invoke/scheduled`. |
 
 ---
 

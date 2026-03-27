@@ -1,0 +1,42 @@
+name: if_demo
+ group: Demo
+ invocation:
+   allow_http: true
+   allow_schedule: false
+
+example_payloads:
+  - name: bob
+    payload:
+      person: Bob
+  - name: alice
+    payload:
+      person: Alice
+
+steps:
+  - id: if_bob
+    type: if
+    condition:
+      context_key: person
+      equals: Bob
+    then:
+      - id: congratulate_bob
+        type: liquid
+        input_from: initial
+        template: "Gefeliciteerd, {{ person }}!"
+      - id: extra_true_stap
+        type: liquid
+        input_from: initial
+        template: "Dit is een extra TRUE-stap voor {{ person }}."
+    else:
+      - id: greet_others
+        type: liquid
+        input_from: initial
+        template: "Hello, {{ person }}!"
+      - id: extra_false_stap
+        type: liquid
+        input_from: initial
+        template: "Dit is een extra FALSE-stap voor {{ person }}."
+  - id: combine
+    type: liquid
+    input_from: if_bob
+    template: "Resultaat: {{ this }}"

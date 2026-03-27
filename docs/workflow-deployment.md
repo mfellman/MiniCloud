@@ -141,7 +141,7 @@ deploy-workflows:dev:
   script:
     - |
       echo "Uploading workflows to DEV..."
-      for f in services/orchestrator/workflows/*.yaml; do
+      for f in workflows/*.yaml; do
         name="$(basename "$f" .yaml)"
         echo "  → $name"
         curl -sf -X POST "${STORAGE_URL}/internal/upload/workflows/${name}" \
@@ -151,7 +151,7 @@ deploy-workflows:dev:
       done
     - |
       echo "Uploading connections to DEV..."
-      for f in services/orchestrator/connections/*.yaml; do
+      for f in connections/*.yaml; do
         name="$(basename "$f" .yaml)"
         echo "  → $name"
         curl -sf -X POST "${STORAGE_URL}/internal/upload/connections/${name}" \
@@ -173,7 +173,7 @@ deploy-workflows:prd:
       when: manual           # require explicit approval for PRD
   script:
     - |
-      for f in services/orchestrator/workflows/*.yaml; do
+      for f in workflows/*.yaml; do
         name="$(basename "$f" .yaml)"
         curl -sf -X POST "${STORAGE_URL_PRD}/internal/upload/workflows/${name}" \
           -H "Authorization: Bearer ${STORAGE_ADMIN_TOKEN_PRD}" \
@@ -212,7 +212,7 @@ For systematic cleanup you can diff the local directory against the storage list
 
 ```bash
 # Files that no longer exist locally but are still in storage → delete them
-local_names=$(ls services/orchestrator/workflows/*.yaml | xargs -I{} basename {} .yaml | sort)
+local_names=$(ls workflows/*.yaml | xargs -I{} basename {} .yaml | sort)
 storage_names=$(curl -s "${STORAGE_URL}/internal/workflows" \
   -H "Authorization: Bearer ${STORAGE_ADMIN_TOKEN}" \
   | python -c "import sys,json; [print(w['name']) for w in json.load(sys.stdin)['workflows']]" \
@@ -232,7 +232,7 @@ curl -sf -X POST "${ORCH_URL}/admin/reload" \
 
 ## 8. Promotion: DEV → TST → ACC → PRD
 
-Workflows live in `services/orchestrator/workflows/`. Promotion follows the image tag:
+Workflows live in `workflows/`. Promotion follows git revisions:
 
 ```
 git branch develop  →  CI builds :dev   →  deploy-workflows:dev   (auto)
@@ -249,7 +249,7 @@ Rollback is a re-upload of the previous version:
 
 ```bash
 # From git tag or branch:
-git show v1.2.3:services/orchestrator/workflows/my-flow.yaml > /tmp/my-flow-rollback.yaml
+git show v1.2.3:workflows/my-flow.yaml > /tmp/my-flow-rollback.yaml
 
 curl -sf -X POST "${STORAGE_URL}/internal/upload/workflows/my-flow" \
   -H "Authorization: Bearer ${STORAGE_ADMIN_TOKEN}" \
