@@ -57,6 +57,7 @@ const STORAGE_PAGE_SIZE = 50;
 const DESIGN_PRESET_KEY_PREFIX = "minicloud.designPresets.";
 const THEME_PREF_KEY = "minicloud.dashboardTheme";
 let authSession = { auth_enabled: false, username: null };
+const loopViewState = {};
 
 // ---------------------------------------------------------------------------
 // Theme helpers
@@ -485,8 +486,7 @@ function renderRunDetail(trace) {
   container.innerHTML = "";
 
   const steps = trace.workflow_definition || trace.steps;
-  const stepTraces = buildStepTraceMap(trace.steps || []);
-  container.appendChild(buildPipeline(steps, stepTraces));
+  container.appendChild(buildPipeline(steps, trace.steps || [], { traceRoot: trace, scopePath: "" }));
 }
 
 // ---------------------------------------------------------------------------
@@ -591,6 +591,16 @@ function buildStepTraceMap(traceSteps) {
     if (s.step) map[s.step] = s;
   }
   return map;
+}
+
+function getStepTracePath(trace, fallbackStepId = "") {
+  if (trace && typeof trace.input_ref === "string" && trace.input_ref.startsWith("steps/")) {
+    return trace.input_ref.slice("steps/".length).replace(/\.input$/, "");
+  }
+  if (trace && typeof trace.output_ref === "string" && trace.output_ref.startsWith("steps/")) {
+    return trace.output_ref.slice("steps/".length).replace(/\.output$/, "");
+  }
+  return fallbackStepId;
 }
 
 // ---------------------------------------------------------------------------
@@ -1418,7 +1428,10 @@ async function runWorkflowViaSchedulerFromDesignOverlay(overlay) {
 // ---------------------------------------------------------------------------
 // Pipeline rendering
 // ---------------------------------------------------------------------------
-function buildPipeline(steps, stepTraces) {
+function buildPipeline(steps, traceSteps, options = {}) {
+  const stepTraces = buildStepTraceMap(traceSteps || []);
+  const traceRoot = options.traceRoot || null;
+  const scopePath = options.scopePath || "";
   const frag = document.createElement("div");
   frag.className = "pipeline";
 
@@ -1431,7 +1444,7 @@ function buildPipeline(steps, stepTraces) {
 
     const isLoop = step.type === "for_each" || step.type === "repeat_until";
     if (isLoop) {
-      frag.appendChild(buildLoopNode(step, stepTraces));
+      frag.appendChild(buildLoopNode(step, stepTraces[step.id] || null, { traceRoot, scopePath }));
     } else {
       frag.appendChild(buildStepNode(step, stepTraces));
     }
@@ -1490,27 +1503,67 @@ function buildStepNode(step, stepTraces) {
   return node;
 }
 
-function buildLoopNode(step, stepTraces) {
-  const trace = stepTraces ? stepTraces[step.id] : null;
+function buildLoopNode(step, trace, options = {}) {
+  const traceRoot = options.traceRoot || null;
+  const parentScopePath = options.scopePath || "";
+  const loopScopePath = parentScopePath ? `${parentScopePath}.${step.id}` : step.id;
   const wrap = document.createElement("div");
   wrap.className = "pipe-loop";
 
   const label = step.type === "for_each"
     ? `for_each \u2014 ${step.id} (as ${step.as_key || "item"})`
     : `repeat_until \u2014 ${step.id}`;
+  const children = Array.isArray(trace?.children) ? trace.children : [];
+  const totalIterations = children.length || Number(trace?.iterations || 0);
+  const stateKey = loopScopePath;
+  const selected = Math.max(0, Math.min(loopViewState[stateKey] || 0, Math.max(totalIterations - 1, 0)));
+  loopViewState[stateKey] = selected;
+
   const iters = trace ? ` \u00b7 ${trace.iterations || "?"} iterations` : "";
+  const navHtml = totalIterations > 0 ? `
+    <div class="loop-iteration-nav" data-loop-key="${esc(stateKey)}">
+      <button class="loop-iteration-btn" data-dir="prev" ${selected <= 0 ? "disabled" : ""}>&lsaquo;</button>
+      <span class="loop-iteration-pill">${selected + 1} / ${totalIterations}</span>
+      <button class="loop-iteration-btn" data-dir="next" ${selected >= totalIterations - 1 ? "disabled" : ""}>&rsaquo;</button>
+    </div>` : "";
 
   wrap.innerHTML = `<div class="loop-header">
     <svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M5.22 14.78a.75.75 0 001.06-1.06L4.56 12h8.69a.75.75 0 000-1.5H4.56l1.72-1.72a.75.75 0 00-1.06-1.06l-3 3a.75.75 0 000 1.06l3 3zm5.56-6.5a.75.75 0 11-1.06-1.06L11.44 5.5H2.75a.75.75 0 010-1.5h8.69L9.72 2.28a.75.75 0 011.06-1.06l3 3a.75.75 0 010 1.06l-3 3z"/></svg>
-    ${esc(label)}${iters}
+    <span>${esc(label)}${iters}</span>
+    ${navHtml}
   </div>`;
 
   const body = document.createElement("div");
   body.className = "loop-body";
+  const selectedIteration = children[selected] || null;
   if (step.steps && step.steps.length) {
-    body.appendChild(buildPipeline(step.steps, stepTraces));
+    if (selectedIteration && Array.isArray(selectedIteration.steps)) {
+      body.appendChild(buildLoopIterationView(step, selectedIteration, {
+        traceRoot,
+        scopePath: `${loopScopePath}.iter_${selected}`,
+      }));
+    } else {
+      body.appendChild(buildPipeline(step.steps, null, {
+        traceRoot,
+        scopePath: loopScopePath,
+      }));
+    }
   }
   wrap.appendChild(body);
+
+  wrap.querySelectorAll(".loop-iteration-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const dir = btn.dataset.dir;
+      const current = loopViewState[stateKey] || 0;
+      const next = dir === "next" ? Math.min(current + 1, totalIterations - 1) : Math.max(current - 1, 0);
+      if (next === current) return;
+      loopViewState[stateKey] = next;
+      if (currentTrace) {
+        renderRunDetail(currentTrace);
+      }
+    });
+  });
 
   wrap.querySelector(".loop-header").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1523,6 +1576,91 @@ function buildLoopNode(step, stepTraces) {
   });
 
   return wrap;
+}
+
+function buildLoopIterationView(loopStep, iterationTrace, options = {}) {
+  const traceRoot = options.traceRoot || null;
+  const scopePath = options.scopePath || "";
+  const container = document.createElement("div");
+  container.className = "loop-iteration-view";
+
+  const info = document.createElement("div");
+  info.className = "loop-iteration-info";
+  info.textContent = `Iteration ${Number(iterationTrace.iteration || 0) + 1}`;
+  container.appendChild(info);
+
+  const traceMap = buildStepTraceMap(iterationTrace.steps || []);
+  for (let i = 0; i < (loopStep.steps || []).length; i++) {
+    const stepDef = loopStep.steps[i];
+    if (i > 0) {
+      const conn = document.createElement("div");
+      conn.className = "pipe-connector";
+      container.appendChild(conn);
+    }
+    // Detect new IF structure
+    if (stepDef.type === "if" && (Array.isArray(stepDef.then) || Array.isArray(stepDef.else))) {
+      const group = {
+        contextKey: (stepDef.condition && stepDef.condition.context_key) || "condition",
+        trueSteps: stepDef.then || [],
+        falseSteps: stepDef.else || [],
+      };
+      const block = buildIfSplitNode(group, traceMap, { traceRoot, scopePath });
+      container.appendChild(block);
+      continue;
+    }
+    // Fallback: legacy when-based grouping (for backward compatibility)
+    if (stepDef.when) {
+      // Render as a single step node for now (could be extended for legacy split)
+      container.appendChild(buildStepNode(stepDef, traceMap));
+      continue;
+    }
+    // Normal step
+    container.appendChild(buildStepNode(stepDef, traceMap));
+  }
+
+  return container;
+}
+
+function buildIfSplitNode(group, traceMap, options = {}) {
+  const traceRoot = options.traceRoot || null;
+  const block = document.createElement("div");
+  block.className = "if-split";
+
+  block.innerHTML = `
+    <div class="if-split-header">if (${esc(group.contextKey)})</div>
+    <div class="if-split-lanes">
+      <div class="if-lane if-lane-true">
+        <div class="if-lane-title">true</div>
+      </div>
+      <div class="if-lane if-lane-false">
+        <div class="if-lane-title">false</div>
+      </div>
+    </div>`;
+
+  const trueLane = block.querySelector(".if-lane-true");
+  const falseLane = block.querySelector(".if-lane-false");
+  appendIfLaneNodes(trueLane, group.trueSteps, traceMap, traceRoot);
+  appendIfLaneNodes(falseLane, group.falseSteps, traceMap, traceRoot);
+  return block;
+}
+
+function appendIfLaneNodes(laneEl, steps, traceMap, traceRoot) {
+  if (!steps || !steps.length) {
+    const empty = document.createElement("div");
+    empty.className = "if-lane-empty";
+    empty.textContent = "(no steps)";
+    laneEl.appendChild(empty);
+    return;
+  }
+
+  steps.forEach((stepDef, idx) => {
+    if (idx > 0) {
+      const conn = document.createElement("div");
+      conn.className = "pipe-connector if-lane-connector";
+      laneEl.appendChild(conn);
+    }
+    laneEl.appendChild(buildStepNode(stepDef, traceMap));
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1641,6 +1779,7 @@ function objectToYaml(value, indent = 0) {
 
 function selectStepNode(step, trace, nodeEl) {
   document.querySelectorAll(".pipe-node.selected").forEach(n => n.classList.remove("selected"));
+  document.querySelectorAll(".loop-header.selected").forEach(n => n.classList.remove("selected"));
   if (nodeEl.classList.contains("pipe-node")) nodeEl.classList.add("selected");
 
   show("detailPanel");
@@ -1652,7 +1791,7 @@ function selectStepNode(step, trace, nodeEl) {
   document.getElementById("detailCode").textContent = buildDesignStepCodeFragment(step);
 
   if (currentTrace && trace) {
-    loadStepIO(currentTrace.request_id, step.id, trace);
+    loadStepIO(currentTrace.request_id, getStepTracePath(trace, step.id), trace);
   } else {
     document.getElementById("detailInput").textContent = trace?.input_preview || "(no data)";
     document.getElementById("detailOutput").textContent = trace?.output_preview || "(no data)";
@@ -1685,6 +1824,7 @@ async function loadStepIO(requestId, stepId, trace) {
 function closeDetail() {
   hide("detailPanel");
   document.querySelectorAll(".pipe-node.selected").forEach(n => n.classList.remove("selected"));
+  document.querySelectorAll(".loop-header.selected").forEach(n => n.classList.remove("selected"));
 }
 
 function switchTab(tab) {

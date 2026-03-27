@@ -172,10 +172,10 @@ Token requirements are **not** in YAML: operators configure either **shared bear
 
 | File | Idea |
 |------|------|
-| `services/orchestrator/workflows/minimal.yaml` | Single XSLT; good first test. |
-| `services/orchestrator/workflows/demo.yaml` | XSLT then HTTP. |
-| `services/orchestrator/workflows/transform_demo.yaml` | xml2json + Liquid. |
-| `services/orchestrator/workflows/schedule_only_demo.yaml` | Scheduled-only (`allow_http: false`). |
+| `workflows/minimal.yaml` | Single XSLT; good first test. |
+| `workflows/demo.yaml` | XSLT then HTTP. |
+| `workflows/transform_demo.yaml` | xml2json + Liquid. |
+| `workflows/schedule_only_demo.yaml` | Scheduled-only (`allow_http: false`). |
 
 ---
 

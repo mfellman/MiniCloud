@@ -27,8 +27,8 @@ DNS within the same namespace: services reachable as `http://<service-name>:8080
 
 File: [`deploy/k8s/kustomization.yaml`](../deploy/k8s/kustomization.yaml).
 
-- **`generatorOptions.disableNameSuffixHash: true`** — fixed ConfigMap name `minicloud-workflows` (otherwise the name changes with content, which complicates deployments).
-- **`configMapGenerator`** — collects `deploy/k8s/workflows/*.yaml` into one ConfigMap. **Note**: workflow changes require `kubectl apply -k` and often a **rollout restart** of the orchestrator when only the ConfigMap changes (new data is mounted, but the app loads workflows at **startup**).
+- `kustomization.yaml` defines core resources (Deployments, Services, PVCs, ingress).
+- Workflow runtime data is **not** sourced from `deploy/k8s/workflows/`; use repository-root `workflows/*.yaml` and push them via storage internal upload endpoints, then call orchestrator reload.
 
 ---
 
@@ -90,7 +90,8 @@ curl -s http://127.0.0.1:8080/healthz
 
 ## 6. Orchestrator: workflows and secrets
 
-- **Workflows**: come from the generated ConfigMap; path in the container: `/app/workflows`.
+- **Workflows**: single source in this repo is `workflows/*.yaml`.
+- For minikube/Kubernetes with `ORCH_RUNTIME_STORE=http`, update runtime workflows by uploading to storage (`/internal/upload/workflows/{name}`) and then calling orchestrator `POST /admin/reload`.
 - **Optional Bearer tokens** for the orchestrator: **`HTTP_INVOCATION_TOKEN`** (`POST /run`, `POST /run/{name}`) and **`SCHEDULE_INVOCATION_TOKEN`** (`POST /invoke/scheduled`). See [`orchestrator-deployment.yaml`](../deploy/k8s/orchestrator-deployment.yaml) for commented `Secret` examples.
 
 ---
@@ -129,9 +130,9 @@ Use the detailed runbook in [RabbitMQ on Kubernetes](rabbitmq-kubernetes.md) to:
 
 ## 8. Update order
 
-1. Change workflow YAML under `deploy/k8s/workflows/`.
-2. `kubectl apply -k deploy/k8s`.
-3. Restart orchestrator if needed: `kubectl rollout restart deployment/orchestrator`.
+1. Change workflow YAML under `workflows/`.
+2. Upload workflows (and optionally connections) via `./push-runtime-assets.ps1`.
+3. Trigger orchestrator reload (`POST /admin/reload`) or let the script do it.
 
 ---
 
@@ -139,7 +140,7 @@ Use the detailed runbook in [RabbitMQ on Kubernetes](rabbitmq-kubernetes.md) to:
 
 | Topic | Compose | Kubernetes |
 |-------|---------|------------|
-| Workflows | Bind mount `services/orchestrator/workflows` | ConfigMap from `deploy/k8s/workflows/` |
+| Workflows | Bind mount `workflows/` | Runtime upload from `workflows/` + orchestrator reload |
 | Service DNS | Service name (e.g. `orchestrator`) | Same idea in-cluster |
 | Public port | gateway `8080:8080` | Ingress or port-forward |
 

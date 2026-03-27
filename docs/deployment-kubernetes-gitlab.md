@@ -135,13 +135,19 @@ Opties: `UPDATE_GIT_BEFORE_DEPLOY=true/false/auto`, `DRY_RUN=true`, `PRINT_ONLY=
 
 ---
 
-## 5. Workflows ConfigMap
+## 5. Workflows runtime sync
 
-The overlay inherits the base **`configMapGenerator`** for workflow YAML under `deploy/k8s/workflows/`. After changing workflows:
+Use `workflows/*.yaml` as the single source in git. After changing workflows, push runtime assets and reload orchestrator:
 
 ```bash
-kubectl apply -k deploy/k8s/overlays/gitlab
-kubectl rollout restart deployment/orchestrator -n minicloud
+./push-runtime-assets.ps1
+```
+
+Or manually:
+
+```bash
+curl -X POST "${STORAGE_URL}/internal/upload/workflows/<name>" --data-binary @workflows/<name>.yaml
+curl -X POST "${ORCH_URL}/admin/reload"
 ```
 
 ---

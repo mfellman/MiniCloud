@@ -262,11 +262,11 @@ The orchestrator keeps a **runtime context** map (string keys/values). Use **`co
 
 ### Example files in this repository
 
-- `services/orchestrator/workflows/demo.yaml` — XSLT then HTTP POST (external URL).
-- `services/orchestrator/workflows/minimal.yaml` — XSLT only (good for offline tests).
-- `services/orchestrator/workflows/transform_demo.yaml` — xml2json + Liquid (`Hello, {{ greeting.name }}`).
-- `services/orchestrator/workflows/schedule_only_demo.yaml` — scheduled route only; not via HTTP trigger (see below).
-- `services/orchestrator/workflows/loop_demo.yaml` — `for_each` loop: XML → xml2json → iterate items → Liquid greeting per person.
+- `workflows/demo.yaml` — XSLT then HTTP POST (external URL).
+- `workflows/minimal.yaml` — XSLT only (good for offline tests).
+- `workflows/transform_demo.yaml` — xml2json + Liquid (`Hello, {{ greeting.name }}`).
+- `workflows/schedule_only_demo.yaml` — scheduled route only; not via HTTP trigger (see below).
+- `workflows/loop_demo.yaml` — `for_each` loop: XML → xml2json → iterate items → Liquid greeting per person.
 
 ---
 
@@ -509,7 +509,7 @@ Host ports:
 | 5672 | rabbitmq AMQP |
 | 15672 | rabbitmq management UI |
 
-Workflows are bind-mounted from `services/orchestrator/workflows` (read-only). YAML changes are visible after restarting the orchestrator container (or rebuild if workflows are baked into the image).
+Workflows are bind-mounted from `workflows` (read-only). YAML changes are visible after restarting the orchestrator container.
 
 ---
 
@@ -518,7 +518,8 @@ Workflows are bind-mounted from `services/orchestrator/workflows` (read-only). Y
 - Manifests live under **`deploy/k8s/`** (Kustomize).
 - **GitLab Container Registry**: full-cluster deploy (images, pull secrets, overlay) is documented in **[docs/deployment-kubernetes-gitlab.md](docs/deployment-kubernetes-gitlab.md)** (`deploy/k8s/overlays/gitlab/`).
 - Build and load images into **kind** with **`deploy/k8s/local-kind.sh`** (requires Docker, kind, kubectl).
-- Workflows are generated as a **ConfigMap** (`minicloud-workflows`) from `deploy/k8s/workflows/*.yaml` and mounted on the orchestrator.
+- Workflows have one source in this repo: `workflows/*.yaml`.
+- For Kubernetes/minikube runtime (`ORCH_RUNTIME_STORE=http`), upload workflows + connections with `./push-runtime-assets.ps1` (or `deploy-minikube.ps1`) and trigger reload.
 - **Ingress** (optional) points at the **gateway**; transformers, orchestrator, and egress services are **ClusterIP** only.
 - **`deploy/k8s/gateway-deployment.yaml`** sets e.g. `ORCHESTRATOR_URL=http://orchestrator:8080`.
 

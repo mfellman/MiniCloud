@@ -48,10 +48,29 @@ steps:
         input_from: "var:empty_obj"
         json_path: /name
         value_from: "var:person"
-      - id: greet
-        type: liquid
-        input_from: make_ctx
-        template: "Hello, {{ name }}!"
+      - id: if_bob
+        type: if
+        condition:
+          context_key: person
+          equals: Bob
+        then:
+          - id: congratulate_bob
+            type: liquid
+            input_from: make_ctx
+            template: "Gefeliciteerd, {{ name }}!"
+          - id: extra_true_stap
+            type: liquid
+            input_from: make_ctx
+            template: "Dit is een extra TRUE-stap voor {{ name }}."
+        else:
+          - id: greet_others
+            type: liquid
+            input_from: make_ctx
+            template: "Hello, {{ name }}!"
+          - id: extra_false_stap
+            type: liquid
+            input_from: make_ctx
+            template: "Dit is een extra FALSE-stap voor {{ name }}."
 
   - id: set_greetings
     type: json_set
